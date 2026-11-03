@@ -1,0 +1,37 @@
+{
+  "strategy_name": "Price Action 5M Momentum / Key Level",
+  "version": "1.0",
+  "conditions": [
+    {
+      "id": "c1_market_structure",
+      "name": "Market Structure Alignment",
+      "description": "Price is aligned with clear higher timeframe or current 5M market structure (higher highs/lows for BUY, lower highs/lows for SELL).",
+      "required": true,
+      "verifiable_numerically": false
+    },
+    {
+      "id": "c2_key_level_interaction",
+      "name": "Key Level / Liquidity Sweep",
+      "description": "Price has swept recent liquidity (equal highs/lows) or tested a key support/resistance or supply/demand zone.",
+      "required": true,
+      "verifiable_numerically": false
+    },
+    {
+      "id": "c3_trigger_candle",
+      "name": "Trigger Candle Rejection / Engulfing",
+      "description": "Current 5M candle shows strong directional rejection (wick) or momentum engulfing in the expected trade direction.",
+      "required": true,
+      "verifiable_numerically": true
+    },
+    {
+      "id": "c4_risk_reward_space",
+      "name": "Clear Room to Target",
+      "description": "Clean path to 2:1 Take Profit without an immediate opposing structure obstacle blocking the move.",
+      "required": true,
+      "verifiable_numerically": false
+    }
+  ],
+  "ready_threshold_ratio": 1.0,
+  "watch_threshold_ratio": 0.75
+}
+
