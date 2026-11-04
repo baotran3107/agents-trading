@@ -104,11 +104,60 @@ class ScreenCaptureService:
         return self._capture_generic()
 
     def _capture_generic(self) -> Image.Image:
-        """Generic cross-platform monitor capture using mss."""
+        """
+        Dual-monitor aware capture:
+        Finds monitors, sorts horizontally (left screen = VP & Footprint, right screen = Bookmap),
+        and stitches them side-by-side with clear visual labels for AI multimodal analysis.
+        """
         with mss.mss() as sct:
-            # Capture the primary monitor
-            monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
-            sct_img = sct.grab(monitor)
-            img = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-            return img
+            physical_monitors = sct.monitors[1:]
+
+            if len(physical_monitors) >= 2:
+                # Sort monitors horizontally by their X 'left' coordinate
+                sorted_monitors = sorted(physical_monitors, key=lambda m: m["left"])
+                left_mon = sorted_monitors[0]
+                right_mon = sorted_monitors[1]
+
+                # Grab left monitor (Volume Profile & Footprint)
+                raw_left = sct.grab(left_mon)
+                img_left = Image.frombytes("RGB", raw_left.size, raw_left.bgra, "raw", "BGRX")
+
+                # Grab right monitor (Bookmap)
+                raw_right = sct.grab(right_mon)
+                img_right = Image.frombytes("RGB", raw_right.size, raw_right.bgra, "raw", "BGRX")
+
+                # Stitch horizontally
+                banner_height = 40
+                total_width = img_left.width + img_right.width
+                max_content_height = max(img_left.height, img_right.height)
+                total_height = max_content_height + banner_height
+
+                composite = Image.new("RGB", (total_width, total_height), color=(20, 24, 32))
+                composite.paste(img_left, (0, banner_height))
+                composite.paste(img_right, (img_left.width, banner_height))
+
+                # Draw section headers on banner
+                from PIL import ImageDraw
+                draw = ImageDraw.Draw(composite)
+                draw.text(
+                    (20, 12),
+                    "◀ LEFT MONITOR: VOLUME PROFILE & FOOTPRINT",
+                    fill=(74, 222, 128),
+                )
+                draw.text(
+                    (img_left.width + 20, 12),
+                    "▶ RIGHT MONITOR: BOOKMAP (LIQUIDITY HEATMAP & CVD)",
+                    fill=(96, 165, 250),
+                )
+                draw.line([(img_left.width, 0), (img_left.width, total_height)], fill=(60, 70, 90), width=3)
+
+                return composite
+
+            elif len(physical_monitors) == 1:
+                # Single monitor fallback
+                sct_img = sct.grab(physical_monitors[0])
+                return Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+            else:
+                sct_img = sct.grab(sct.monitors[0])
+                return Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
 

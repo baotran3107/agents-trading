@@ -7,10 +7,15 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from PIL import Image
 from src.analyzer.models import ArgonAnalysisResult, get_analysis_json_schema
+from src.analyzer.orderflow_models import (
+    OrderFlowTriggerEvaluation,
+    get_orderflow_trigger_json_schema,
+)
 from src.analyzer.prompt import build_analysis_prompt
 from src.analyzer.validator import validate_analysis_result
 from src.config import ModelConfig
 from src.mt5.models import RawPrices
+from src.planner.models import DailyPlan
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +77,86 @@ class ArgonClient:
         except FileNotFoundError:
             raise ArgonClientError(f"CLI executable '{self.config.cli_path}' not found in PATH.")
 
-    def _execute_gemini_api_call(self, prompt: str, image_path: Path) -> Tuple[Optional[ArgonAnalysisResult], Dict[str, Any]]:
+    def analyze_orderflow_cycle(
+        self,
+        image_path: Path,
+        raw_prices: RawPrices,
+        daily_plan: Optional[DailyPlan] = None,
+    ) -> Tuple[Optional[OrderFlowTriggerEvaluation], Dict[str, Any]]:
+        """
+        Evaluates current 5-minute candle against active Daily Plan.
+        Inspects composite dual monitor: Left (VP + Footprint), Right (Bookmap).
+        """
+        plan_context = "No active daily plan established. Analyze based on standard order flow reaction."
+        if daily_plan:
+            scenarios_desc = "\n".join(
+                [f"- {s.name} ({s.bias}): Condition='{s.entry_condition}', Trigger='{s.trigger_signal}'" for s in daily_plan.scenarios]
+            )
+            zones_desc = "\n".join(
+                [f"- {z.name} ({z.price_low:.1f}-{z.price_high:.1f}): {z.description}" for z in daily_plan.key_zones]
+            )
+            plan_context = (
+                f"ACTIVE DAILY TRADING PLAN ({daily_plan.date}):\n"
+                f"Market Bias: {daily_plan.primary_bias}\n"
+                f"Key Zones:\n{zones_desc}\n"
+                f"Scenarios:\n{scenarios_desc}\n"
+            )
+
+        prompt = f"""You are an elite Order Flow trader inspecting live gold (XAUUSD) markets 15 seconds before the 5-minute candle closes.
+
+DUAL-MONITOR COMPOSITE SCREENSHOT: {image_path.resolve()}
+- LEFT MONITOR: Volume Profile (VAH, VAL, POC) and Footprint Chart (Delta imbalance, bid/ask cluster absorption).
+- RIGHT MONITOR: Bookmap (Resting liquidity heatmap, liquidity sweeps, CVD divergence).
+
+VERIFIED LIVE PRICES FROM MT5:
+- Current Price: {raw_prices.current_price:.2f} (Bid: {raw_prices.bid:.2f}, Ask: {raw_prices.ask:.2f})
+- 15M High: {raw_prices.m15_high:.2f} | 15M Low: {raw_prices.m15_low:.2f}
+
+{plan_context}
+
+EVALUATION CHECKLIST:
+1. Is current market structure moving in accordance with one of the planned scenarios? (plan_aligned)
+2. Is price inside or reacting to a planned key zone (VAH, VAL, POC, or Bookmap liquidity pool)? (in_key_zone)
+3. Is an order flow trigger clearly present? (e.g. Footprint absorption wick, delta exhaustion, or Bookmap liquidity sweep + bounce)? (trigger_detected)
+4. Set 'trade_ready' to true ONLY if all three conditions are satisfied.
+5. If trade_ready is true, specify direction (BUY or SELL), suggested_entry, suggested_sl, suggested_tp, and summary.
+6. Return strictly in JSON according to the schema.
+"""
+        schema_str = json.dumps(get_orderflow_trigger_json_schema())
+        cmd = [
+            self.config.cli_path,
+            "-p", prompt,
+            "--model", self.config.model_name,
+            "--disable-slash-commands",
+            "--output-format", "json",
+            "--json-schema", schema_str,
+        ]
+
+        metadata = {"duration_seconds": 0.0, "usage": {}, "error": None}
+        start_t = time.perf_counter()
+
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=self.config.timeout_seconds)
+            metadata["duration_seconds"] = time.perf_counter() - start_t
+            if proc.returncode != 0:
+                metadata["error"] = f"Exit code {proc.returncode}"
+                return None, metadata
+
+            cli_output = json.loads(proc.stdout)
+            metadata["usage"] = cli_output.get("usage", {})
+            data = cli_output.get("structured_output") or cli_output.get("response")
+
+            if isinstance(data, str):
+                from src.analyzer.validator import extract_json_from_text
+                data = extract_json_from_text(data)
+
+            evaluation = OrderFlowTriggerEvaluation.model_validate(data)
+            return evaluation, metadata
+
+        except Exception as e:
+            metadata["error"] = str(e)
+            logger.error(f"OrderFlow cycle analysis error: {e}")
+            return None, metadata
         """Executes direct Gemini API call for fast sub-3s inference."""
         if not self._genai_client:
             raise ArgonClientError("Gemini API client is not configured or missing GEMINI_API_KEY.")

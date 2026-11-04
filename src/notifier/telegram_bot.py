@@ -3,9 +3,12 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 import httpx
+from src.analyzer.models import ArgonAnalysisResult
+from src.analyzer.orderflow_models import OrderFlowTriggerEvaluation
 from src.config import TelegramConfig
-from src.decision.models import AgentState, SignalDecision
+from src.decision.models import AgentState, SignalDecision, TradeParameters
 from src.decision.recheck import RecheckResult
+from src.planner.models import DailyPlan
 from src.storage.logger import CycleStorage
 
 logger = logging.getLogger(__name__)
@@ -18,6 +21,7 @@ class TelegramNotifier:
         self.base_url = f"https://api.telegram.org/bot{self.config.bot_token}"
         self.is_paused = False
         self._last_update_id = 0
+        self.on_plan_requested: Optional[Callable[[], Any]] = None
 
     @property
     def is_configured(self) -> bool:
@@ -127,12 +131,143 @@ class TelegramNotifier:
             logger.error(f"Failed to send Telegram message: {e}")
             return None
 
-    def send_recheck_outcome(
+    def send_daily_plan(self, plan: DailyPlan, image_path: Optional[Path]) -> None:
+        """Sends the Daily Plan to Telegram with the dual-screen overview."""
+        if not self.is_configured:
+            return
+
+        from src.planner.daily_planner import DailyPlanner
+        # We can format using simple markdown
+        bias_emoji = "🟢 BULLISH" if plan.primary_bias == "BULLISH" else ("🔴 BEARISH" if plan.primary_bias == "BEARISH" else "⚪ NEUTRAL")
+        lines = [
+            f"📋 **DAILY TRADING PLAN — {plan.symbol}**",
+            f"📅 Ngày: `{plan.date}` | Định hướng: **{bias_emoji}**",
+            f"🏛 *Cấu trúc:* {plan.market_context}",
+            "",
+            "🎯 **Vùng thanh khoản trọng điểm (VP & Bookmap):**",
+        ]
+        for z in plan.key_zones:
+            lines.append(f"• **{z.name}** (`{z.price_low:.1f} - {z.price_high:.1f}`): {z.description}")
+
+        lines.append("\n⚡ **Kịch bản giao dịch theo dõi:**")
+        for s in plan.scenarios:
+            icon = "🟢" if s.bias == "BULLISH" else "🔴"
+            lines.extend([
+                f"{icon} **{s.name}**:",
+                f"   • Điều kiện: {s.entry_condition}",
+                f"   • Tín hiệu kích hoạt: {s.trigger_signal}",
+                f"   • Mục tiêu: {s.target_zone}",
+                f"   • Hủy kèo nếu: {s.invalidation}",
+            ])
+
+        lines.extend([
+            "",
+            f"💡 *Tóm lược:* {plan.summary}",
+            "\n_Bot sẽ tự động quét mỗi 5 phút (T-15s) theo đúng các kịch bản này._"
+        ])
+        caption = "\n".join(lines)
+
+        reply_markup = {
+            "inline_keyboard": [
+                [
+                    {"text": "🔄 Cập nhật lại Plan", "callback_data": "trigger_plan"},
+                ]
+            ]
+        }
+
+        self._send_media_or_text(caption, image_path, reply_markup)
+
+    def send_orderflow_trade_request(
         self,
-        decision: SignalDecision,
-        recheck: RecheckResult,
+        eval_result: OrderFlowTriggerEvaluation,
+        trade_params: Optional[TradeParameters],
+        image_path: Optional[Path],
+        cycle_id: str,
         symbol: str,
-    ) -> None:
+    ) -> Optional[int]:
+        """Sends the Trade Entry Proposal based on Plan Alignment + Footprint/Bookmap trigger."""
+        if not self.is_configured or self.is_paused:
+            return None
+
+        dir_icon = "🟢 BUY" if eval_result.direction == "BUY" else "🔴 SELL"
+        lines = [
+            f"🚨 **YÊU CẦU VÀO LỆNH — {symbol} ({dir_icon})**",
+            "⚠️ *Gửi trước khi nến đóng 15 giây (T-15s)*",
+            "",
+            f"📋 **Kịch bản khớp:** `{eval_result.matched_scenario or 'Plan Setup'}`",
+            f"🎯 **Vùng kiểm tra:** {eval_result.zone_description}",
+            f"⚡ **Tín hiệu Trigger:** {eval_result.trigger_description}",
+            "",
+        ]
+
+        if trade_params:
+            tp = trade_params
+            lines.extend([
+                f"📊 **Thông số lệnh đề xuất (Fixed Risk $250):**",
+                f"• Entry: `{tp.entry_price:.2f}`",
+                f"• Stop Loss: `{tp.stop_loss:.2f}` ({tp.sl_points:.1f} pts)",
+                f"• Take Profit: `{tp.take_profit:.2f}` (R:R = 1:{tp.risk_reward_ratio:.1f})",
+                f"• Khối lượng đề xuất: `{tp.lot_size:.2f} lot`",
+                "",
+            ])
+
+        lines.append(f"💡 *Đánh giá Order Flow:* {eval_result.summary}")
+        lines.append(f"\n_Mã chu kỳ: {cycle_id}_")
+        caption = "\n".join(lines)
+
+        reply_markup = {
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "✅ DUYỆT VÀO LỆNH (Approve)",
+                        "callback_data": f"label:{cycle_id}:VALID",
+                    },
+                    {
+                        "text": "❌ BỎ QUA (Reject)",
+                        "callback_data": f"label:{cycle_id}:INVALID",
+                    },
+                ]
+            ]
+        }
+
+        return self._send_media_or_text(caption, image_path, reply_markup)
+
+    def _send_media_or_text(
+        self, text: str, image_path: Optional[Path], reply_markup: Optional[dict] = None
+    ) -> Optional[int]:
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                if image_path and image_path.exists():
+                    url = f"{self.base_url}/sendPhoto"
+                    with open(image_path, "rb") as photo_file:
+                        files = {"photo": photo_file}
+                        data = {
+                            "chat_id": self.config.chat_id,
+                            "caption": text,
+                            "parse_mode": "Markdown",
+                        }
+                        if reply_markup:
+                            data["reply_markup"] = httpx._compat.json_dumps(reply_markup)
+                        resp = client.post(url, data=data, files=files)
+                else:
+                    url = f"{self.base_url}/sendMessage"
+                    payload = {
+                        "chat_id": self.config.chat_id,
+                        "text": text,
+                        "parse_mode": "Markdown",
+                    }
+                    if reply_markup:
+                        payload["reply_markup"] = reply_markup
+                    resp = client.post(url, json=payload)
+
+                if resp.status_code == 200:
+                    return resp.json().get("result", {}).get("message_id")
+                else:
+                    logger.error(f"Telegram API error {resp.status_code}: {resp.text}")
+                    return None
+        except Exception as e:
+            logger.error(f"Failed to send Telegram message: {e}")
+            return None
         """FR-11: Sends immediate notification if invalidated or confirmed after candle close."""
         if not self.is_configured:
             return
@@ -216,6 +351,13 @@ class TelegramNotifier:
                                     json={"callback_query_id": cb_id, "text": f"Saved: {label_emoji}"},
                                 )
                                 self.send_text(f"📝 Cycle `{cycle_id}` was labeled {label_emoji} by trader.")
+                        elif data == "trigger_plan":
+                            client.post(
+                                f"{self.base_url}/answerCallbackQuery",
+                                json={"callback_query_id": cb_id, "text": "Đang khởi tạo Daily Plan..."},
+                            )
+                            if self.on_plan_requested:
+                                self.on_plan_requested()
 
                     # Handle Chat Commands
                     if "message" in update and "text" in update["message"]:
@@ -227,6 +369,10 @@ class TelegramNotifier:
                         elif text == "/resume":
                             self.is_paused = False
                             self.send_text("▶️ Trading Agent has **RESUMED**.")
+                        elif text == "/plan":
+                            self.send_text("🔄 Đang chụp 2 màn hình (VP/Footprint & Bookmap) và phân tích Daily Plan...")
+                            if self.on_plan_requested:
+                                self.on_plan_requested()
                         elif text == "/stats":
                             stats = self.storage.get_stats()
                             msg = (

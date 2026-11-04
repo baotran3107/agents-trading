@@ -25,6 +25,7 @@ from src.decision.risk import RiskCalculator
 from src.decision.state_machine import SignalStateMachine
 from src.mt5.client import MT5ConnectionError, get_mt5_client
 from src.notifier.telegram_bot import TelegramNotifier
+from src.planner.daily_planner import DailyPlanner
 from src.storage.logger import CycleStorage
 
 logging.basicConfig(
@@ -98,6 +99,43 @@ class TradingSignalAgent:
             cooldown_minutes=config.telegram.cooldown_minutes,
         )
         self.recheck_verifier = CandleCloseVerifier(self.mt5_client)
+        self.daily_planner = DailyPlanner(
+            config=config,
+            analyzer=self.analyzer,
+            capture_service=self.capture_service,
+            mt5_client=self.mt5_client,
+        )
+        self.notifier.on_plan_requested = self.trigger_daily_plan
+        self.last_plan_date: Optional[str] = (
+            self.daily_planner.current_plan.date if self.daily_planner.current_plan else None
+        )
+
+    def trigger_daily_plan(self) -> None:
+        """Triggers Daily Plan generation on-demand or at 08:00 AM."""
+        logger.info("Executing Daily Plan generation...")
+        plan = self.daily_planner.generate_plan()
+        if plan:
+            self.last_plan_date = plan.date
+            # Capture snapshot to attach with plan
+            latest_img = Path(self.config.capture.output_dir) / f"daily_plan_active.png"
+            if not latest_img.exists():
+                latest_img = None
+            self.notifier.send_daily_plan(plan, latest_img)
+            logger.info(f"Daily Plan {plan.date} generated and sent to Telegram.")
+        else:
+            self.notifier.send_system_alert("⚠️ Không thể tạo Daily Plan tự động. Vui lòng kiểm tra màn hình và agy CLI.")
+
+    def check_daily_plan_schedule(self) -> None:
+        """Auto-triggers plan at 08:00 AM local time if not already created today."""
+        now = datetime.now()
+        today_str = now.strftime("%Y-%m-%d")
+        current_time_str = now.strftime("%H:%M")
+
+        target_time = self.config.daily_plan.plan_time  # "08:00"
+        if self.config.daily_plan.auto_generate:
+            if current_time_str >= target_time and self.last_plan_date != today_str:
+                logger.info(f"08:00 AM Daily Plan trigger reached for {today_str}.")
+                self.trigger_daily_plan()
 
     def startup(self) -> None:
         logger.info("Initializing Trading Signal Agent...")
@@ -151,47 +189,68 @@ class TradingSignalAgent:
             self.notifier.send_system_alert(f"MT5 disconnected: {e}. Cycle aborted.")
             return None
 
-        # ST-004: Argon Analysis
-        analysis_result, meta = self.analyzer.analyze_chart(
+        # Order Flow Analysis against Active Daily Plan (T-15s)
+        of_eval, meta = self.analyzer.analyze_orderflow_cycle(
             image_path=image_path,
             raw_prices=raw_prices,
-            checklist_config=self.checklist_config,
+            daily_plan=self.daily_planner.current_plan,
         )
 
-        # FR-5: State Machine Decision (Only code decides state)
-        decision = self.state_machine.evaluate(
-            cycle_id=cycle_id,
-            timestamp=cycle_timestamp,
-            analysis=analysis_result,
-            raw_prices=raw_prices,
-        )
-        logger.info(f"Decision: State={decision.state.value}, Direction={decision.direction}")
-
-        # Send Telegram alert if WATCH or READY (ST-005)
         telegram_msg_id = None
-        if decision.state in (AgentState.WATCH, AgentState.READY):
-            telegram_msg_id = self.notifier.send_signal_alert(
-                decision=decision,
+        recheck_status = None
+
+        if of_eval and of_eval.trade_ready:
+            logger.info(
+                f"🚨 ORDER FLOW TRIGGER MET: {of_eval.direction} | "
+                f"Scenario: {of_eval.matched_scenario} | Zone: {of_eval.zone_description}"
+            )
+            # Calculate Risk Parameters ($250 fixed risk)
+            trade_params = self.risk_calculator.calculate_trade_parameters(
+                direction=of_eval.direction, raw_prices=raw_prices
+            )
+
+            # Send Proposal to Telegram
+            telegram_msg_id = self.notifier.send_orderflow_trade_request(
+                eval_result=of_eval,
+                trade_params=trade_params,
                 image_path=image_path,
+                cycle_id=cycle_id,
                 symbol=symbol,
             )
 
-        # ST-008 & FR-11: Re-check at Candle Close
-        recheck_status = None
-        if decision.state == AgentState.READY and not decision.is_suppressed_by_cooldown:
-            # Wait until the 5-minute candle officially closes (~10 seconds)
+            # ST-008 & FR-11: Re-check at Candle Close (T=0)
+            logger.info(f"Waiting {self.config.trading.t_minus_seconds}s until 5M candle officially closes...")
             time.sleep(self.config.trading.t_minus_seconds)
 
+            decision_stub = SignalDecision(
+                cycle_id=cycle_id,
+                timestamp=cycle_timestamp,
+                state=AgentState.READY,
+                direction=of_eval.direction,
+                analysis=None,
+                trade_params=trade_params,
+            )
             recheck = self.recheck_verifier.verify_at_candle_close(
-                decision=decision,
+                decision=decision_stub,
                 symbol=symbol,
                 timeframe_minutes=self.config.trading.timeframe_minutes,
             )
             recheck_status = recheck.status_label
             logger.info(f"Candle Close Recheck: {recheck.status_label} - {recheck.reason}")
+            self.notifier.send_recheck_outcome(decision_stub, recheck, symbol)
 
-            # Send Telegram confirmation or invalidation notice (FR-11)
-            self.notifier.send_recheck_outcome(decision, recheck, symbol)
+            decision = decision_stub
+        else:
+            reason_msg = of_eval.summary if of_eval else "Order flow evaluation did not trigger."
+            logger.info(f"Order Flow Monitor: No trigger met ({reason_msg})")
+            decision = SignalDecision(
+                cycle_id=cycle_id,
+                timestamp=cycle_timestamp,
+                state=AgentState.IDLE,
+                direction="NONE",
+                analysis=None,
+                reasons=[reason_msg],
+            )
 
         # ST-007: Record cycle to SQLite and JSONL
         self.storage.record_cycle(
@@ -211,6 +270,9 @@ class TradingSignalAgent:
 
         while True:
             try:
+                # Check 08:00 AM daily plan auto-generation
+                self.check_daily_plan_schedule()
+
                 # Poll Telegram commands & feedback buttons continuously
                 self.notifier.process_updates()
 
@@ -254,14 +316,19 @@ class TradingSignalAgent:
 
 def main():
     parser = argparse.ArgumentParser(description="Trading Signal Agent")
-    parser.add_argument("--once", action="store_true", help="Run a single cycle and exit (useful for testing)")
+    parser.add_argument("--once", action="store_true", help="Run a single 5M cycle and exit")
+    parser.add_argument("--plan", action="store_true", help="Generate Daily Plan immediately and exit")
     parser.add_argument("--config", type=str, default="config/config.yaml", help="Path to config YAML")
     args = parser.parse_args()
 
     cfg = load_config(Path(args.config))
     agent = TradingSignalAgent(cfg)
 
-    if args.once:
+    if args.plan:
+        agent.startup()
+        agent.trigger_daily_plan()
+        print("\nDaily Plan generated successfully.")
+    elif args.once:
         agent.startup()
         decision = agent.run_single_cycle()
         print(f"\nCycle completed. State: {decision.state if decision else 'None'}")

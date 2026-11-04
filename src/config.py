@@ -14,14 +14,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class ActiveHoursConfig(BaseModel):
     enabled: bool = True
     start: str = "08:00"
-    end: str = "22:00"
-    timezone: str = "UTC"
+    end: str = "23:59"
+    timezone: str = "Asia/Ho_Chi_Minh"
+
+
+class DailyPlanConfig(BaseModel):
+    plan_time: str = "08:00"
+    timezone: str = "Asia/Ho_Chi_Minh"
+    auto_generate: bool = True
+    plan_file: str = "data/daily_plan.json"
 
 
 class TradingConfig(BaseModel):
     symbol: str = "XAUUSD"
     timeframe_minutes: int = 5
-    t_minus_seconds: int = 10
+    t_minus_seconds: int = 15
     active_hours: ActiveHoursConfig = Field(default_factory=ActiveHoursConfig)
 
 
@@ -77,6 +84,7 @@ class StorageConfig(BaseModel):
 
 class AppConfig(BaseModel):
     trading: TradingConfig = Field(default_factory=TradingConfig)
+    daily_plan: DailyPlanConfig = Field(default_factory=DailyPlanConfig)
     risk: RiskConfig = Field(default_factory=RiskConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
