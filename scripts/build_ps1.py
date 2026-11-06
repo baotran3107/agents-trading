@@ -420,3 +420,4 @@ max_c = max(ord(c) for c in full_code)
 print(f'Max char code in file: {max_c} (< 128 is pure ASCII)')
 assert max_c < 128, 'File contains non-ASCII character!'
 print('VERIFIED: The entire run_trading_agent.ps1 is 100% pure ASCII!')
+
