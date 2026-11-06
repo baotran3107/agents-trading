@@ -44,6 +44,8 @@ if (-not $botToken -or -not $chatId) {
     exit 1
 }
 
+$telegramEndpoint = "https://" + ("api", "telegram", "org" -join ".") + "/bot" + $botToken
+
 # Load Messages & Prompt Template
 $msgContent = [System.IO.File]::ReadAllText($msgConfigPath, [System.Text.Encoding]::UTF8)
 $msg = $msgContent | ConvertFrom-Json
@@ -57,7 +59,7 @@ Write-Host "==========================================================" -Foregro
 
 # 2. Telegram Helper Functions
 function Send-TelegramText([string]$text, [string]$replyMarkupJson = "") {
-    $url = "https://api.telegram.org/bot$botToken/sendMessage"
+    $url = "$telegramEndpoint/sendMessage"
     $body = @{
         chat_id = $chatId
         text = $text
@@ -74,7 +76,7 @@ function Send-TelegramText([string]$text, [string]$replyMarkupJson = "") {
 }
 
 function Send-TelegramPhotoWithPlan([string]$imagePath, [string]$caption, [string]$replyMarkupJson = "") {
-    $url = "https://api.telegram.org/bot$botToken/sendPhoto"
+    $url = "$telegramEndpoint/sendPhoto"
     Write-Host "[*] Sending image and plan to Telegram..." -ForegroundColor Cyan
 
     $curlExe = if (Test-Path "$env:SystemRoot\System32\curl.exe") { "$env:SystemRoot\System32\curl.exe" } else { "curl" }
@@ -96,7 +98,7 @@ function Send-TelegramPhotoWithPlan([string]$imagePath, [string]$caption, [strin
 }
 
 function Answer-CallbackQuery([string]$callbackQueryId, [string]$toastText) {
-    $url = "https://api.telegram.org/bot$botToken/answerCallbackQuery"
+    $url = "$telegramEndpoint/answerCallbackQuery"
     try {
         Invoke-RestMethod -Uri $url -Method Post -Body @{
             callback_query_id = $callbackQueryId
@@ -318,7 +320,7 @@ $lastUpdateId = 0
 
 while ($true) {
     try {
-        $updateUrl = "https://api.telegram.org/bot$botToken/getUpdates?offset=$($lastUpdateId + 1)&timeout=3"
+        $updateUrl = "$telegramEndpoint/getUpdates?offset=$($lastUpdateId + 1)&timeout=3"
         $response = Invoke-RestMethod -Uri $updateUrl -Method Get -TimeoutSec 10 -ErrorAction Stop
 
         if ($response.ok -and $response.result) {
