@@ -6,6 +6,13 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# Enable Per-Monitor DPI Awareness so secondary monitor coordinates and resolutions are physical and not blank
+try {
+    Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();' -Name "DpiAwareHelper" -Namespace "NativeDpi" -ErrorAction SilentlyContinue
+    [NativeDpi.DpiAwareHelper]::SetProcessDPIAware() | Out-Null
+    Write-Host "[*] DPI awareness enabled for multi-monitor capture." -ForegroundColor Gray
+} catch {}
+
 # 1. Environment & Config Setup
 $scriptDir = $PSScriptRoot
 if (-not $scriptDir) { $scriptDir = (Get-Location).Path }
@@ -94,6 +101,8 @@ function Send-TelegramPhoto([string]$imagePath, [string]$caption = "", [string]$
     $curlImagePath = $imagePath.Replace("\", "/")
 
     $tempCaptionFile = $null
+    $tempMarkupFile = $null
+
     $argsList = @(
         "-s",
         "-X", "POST", $url,
@@ -112,8 +121,11 @@ function Send-TelegramPhoto([string]$imagePath, [string]$caption = "", [string]$
     }
 
     if ($replyMarkupJson) {
+        $tempMarkupFile = Join-Path $capturesDir ("btn_" + [System.IO.Path]::GetRandomFileName() + ".json")
+        [System.IO.File]::WriteAllText($tempMarkupFile, $replyMarkupJson, [System.Text.Encoding]::UTF8)
+        $curlMarkupPath = $tempMarkupFile.Replace("\", "/")
         $argsList += "-F"
-        $argsList += "reply_markup=$replyMarkupJson"
+        $argsList += "reply_markup=<$curlMarkupPath"
     }
 
     $rawResp = & $curlExe @argsList
@@ -121,7 +133,7 @@ function Send-TelegramPhoto([string]$imagePath, [string]$caption = "", [string]$
 
     # Fallback without Markdown formatting if Telegram rejected Markdown parsing
     if ($caption -and (-not $respText.Contains('"ok":true'))) {
-        Write-Warning "Telegram send with Markdown failed. Retrying without parse_mode..."
+        Write-Warning "Telegram send with Markdown failed ($respText). Retrying without parse_mode..."
         $argsListFallback = @(
             "-s",
             "-X", "POST", $url,
@@ -129,16 +141,20 @@ function Send-TelegramPhoto([string]$imagePath, [string]$caption = "", [string]$
             "-F", "photo=@$curlImagePath",
             "-F", "caption=<$curlCaptionPath"
         )
-        if ($replyMarkupJson) {
+        if ($tempMarkupFile) {
             $argsListFallback += "-F"
-            $argsListFallback += "reply_markup=$replyMarkupJson"
+            $argsListFallback += "reply_markup=<$curlMarkupPath"
         }
         $rawResp = & $curlExe @argsListFallback
         $respText = if ($rawResp -is [array]) { $rawResp -join "" } else { [string]$rawResp }
     }
 
+    # Clean up temp files
     if ($tempCaptionFile -and (Test-Path $tempCaptionFile)) {
         Remove-Item -Path $tempCaptionFile -Force -ErrorAction SilentlyContinue
+    }
+    if ($tempMarkupFile -and (Test-Path $tempMarkupFile)) {
+        Remove-Item -Path $tempMarkupFile -Force -ErrorAction SilentlyContinue
     }
 
     if ($respText.Contains('"ok":true')) {
@@ -341,6 +357,8 @@ function Trigger-DailyPlanAnalysis() {
             # Photo 1: Left Monitor (VP & Footprint)
             Send-TelegramPhoto -imagePath $caps.Left -caption $msg.caption_left
 
+            Start-Sleep -Milliseconds 800
+
             # Photo 2: Right Monitor (Bookmap) with the Daily Plan caption and action buttons
             Send-TelegramPhoto -imagePath $caps.Right -caption $finalCaption -replyMarkupJson $actionButtonsMarkup
         } else {
@@ -376,6 +394,8 @@ function Trigger-ScreenCaptureOnly() {
             # Photo 1: Left Monitor
             $captionLeft = $msg.caption_left + [System.Environment]::NewLine + "⏰ " + $nowStr
             Send-TelegramPhoto -imagePath $caps.Left -caption $captionLeft
+
+            Start-Sleep -Milliseconds 800
 
             # Photo 2: Right Monitor with action buttons
             $captionRight = $msg.caption_right + [System.Environment]::NewLine + "⏰ " + $nowStr
