@@ -72,7 +72,13 @@ function Send-TelegramText([string]$text, [string]$replyMarkupJson = "") {
     try {
         Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/x-www-form-urlencoded; charset=utf-8" | Out-Null
     } catch {
-        Write-Warning "Telegram send error: $_"
+        # Retry without Markdown if syntax parsing failed
+        $body.Remove("parse_mode")
+        try {
+            Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/x-www-form-urlencoded; charset=utf-8" | Out-Null
+        } catch {
+            Write-Warning "Telegram send text error: $_"
+        }
     }
 }
 
@@ -82,12 +88,17 @@ function Send-TelegramPhotoWithPlan([string]$imagePath, [string]$caption, [strin
 
     $curlExe = if (Test-Path "$env:SystemRoot\System32\curl.exe") { "$env:SystemRoot\System32\curl.exe" } else { "curl" }
 
+    # Save caption to a temporary UTF-8 file to prevent Windows command line multiline truncation
+    $tempCaptionFile = Join-Path $capturesDir "caption_temp.txt"
+    [System.IO.File]::WriteAllText($tempCaptionFile, $caption, [System.Text.Encoding]::UTF8)
+
+    # 1. Attempt sending with Markdown formatting
     $argsList = @(
         "-s",
         "-X", "POST", $url,
         "-F", "chat_id=$chatId",
         "-F", "photo=@$imagePath",
-        "-F", "caption=$caption",
+        "-F", "caption=<$tempCaptionFile",
         "-F", "parse_mode=Markdown"
     )
     if ($replyMarkupJson) {
@@ -95,7 +106,41 @@ function Send-TelegramPhotoWithPlan([string]$imagePath, [string]$caption, [strin
         $argsList += "reply_markup=$replyMarkupJson"
     }
 
-    & $curlExe @argsList | Out-Null
+    $rawResp = & $curlExe @argsList
+    $respText = if ($rawResp -is [array]) { $rawResp -join "" } else { [string]$rawResp }
+
+    # 2. If Markdown parse fails, retry without Markdown formatting
+    if (-not $respText.Contains('"ok":true')) {
+        Write-Warning "Telegram send with Markdown failed ($respText). Retrying without parse_mode..."
+        $argsListFallback = @(
+            "-s",
+            "-X", "POST", $url,
+            "-F", "chat_id=$chatId",
+            "-F", "photo=@$imagePath",
+            "-F", "caption=<$tempCaptionFile"
+        )
+        if ($replyMarkupJson) {
+            $argsListFallback += "-F"
+            $argsListFallback += "reply_markup=$replyMarkupJson"
+        }
+        $rawResp = & $curlExe @argsListFallback
+        $respText = if ($rawResp -is [array]) { $rawResp -join "" } else { [string]$rawResp }
+    }
+
+    # Clean up temp caption file
+    if (Test-Path $tempCaptionFile) {
+        Remove-Item -Path $tempCaptionFile -Force -ErrorAction SilentlyContinue
+    }
+
+    if ($respText.Contains('"ok":true')) {
+        Write-Host "[+] Successfully sent plan photo to Telegram!" -ForegroundColor Green
+        return $true
+    } else {
+        Write-Host "[!] Telegram error: $respText" -ForegroundColor Red
+        # Fallback: Send caption as regular text message
+        Send-TelegramText $caption $replyMarkupJson
+        return $false
+    }
 }
 
 function Answer-CallbackQuery([string]$callbackQueryId, [string]$toastText) {
@@ -274,7 +319,6 @@ function Trigger-DailyPlanAnalysis() {
 
         # 3. Send photo and caption to Telegram
         Send-TelegramPhotoWithPlan -imagePath $stitchedImage -caption $finalCaption -replyMarkupJson $planButtonMarkup
-        Write-Host "[+] Successfully sent plan to Telegram!" -ForegroundColor Green
 
     } catch {
         Write-Host "[!] Error during analysis: $_" -ForegroundColor Red
