@@ -219,7 +219,7 @@ function Trigger-DailyPlanAnalysis() {
         $prompt = [string]::Format($promptTemplate, $symbol, $stitchedImage, $todayStr)
 
         Write-Host "[*] Calling agy ($modelName) for analysis..." -ForegroundColor Cyan
-        $agyOutput = & agy -p $prompt --model $modelName --disable-slash-commands --output-format json --json-schema $schemaFilePath
+        $agyOutput = & agy -p $prompt --model $modelName --dangerously-skip-permissions --disable-slash-commands --output-format json --json-schema $schemaFilePath
 
         if (-not $agyOutput) {
             throw "CLI agy did not return output!"

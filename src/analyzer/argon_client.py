@@ -125,6 +125,7 @@ QUY TẮC BẮT BUỘC VỀ NGÔN NGỮ VÀ TIÊU CHÍ:
             self.config.cli_path,
             "-p", prompt,
             "--model", self.config.model_name,
+            "--dangerously-skip-permissions",
             "--disable-slash-commands",
             "--output-format", "json",
             "--json-schema", schema_str,
