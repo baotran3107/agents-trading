@@ -53,6 +53,9 @@ $msg = $msgContent | ConvertFrom-Json
 
 $promptTemplate = [System.IO.File]::ReadAllText($promptFilePath, [System.Text.Encoding]::UTF8)
 
+# Reusable 2-row action keyboard markup: [🔄 Cập nhật lại Plan] and [📸 Chụp màn hình]
+$actionButtonsMarkup = '{"inline_keyboard":[[{"text":"' + $msg.btn_plan + '","callback_data":"trigger_plan"}],[{"text":"' + $msg.btn_capture + '","callback_data":"trigger_capture"}]]}'
+
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "  ORDER FLOW TRADING AGENT - WINDOWS SERVICE" -ForegroundColor Green
 Write-Host "  Chat ID: $chatId | Model: $modelName" -ForegroundColor Cyan
@@ -72,7 +75,6 @@ function Send-TelegramText([string]$text, [string]$replyMarkupJson = "") {
     try {
         Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/x-www-form-urlencoded; charset=utf-8" | Out-Null
     } catch {
-        # Retry without Markdown if syntax parsing failed
         $body.Remove("parse_mode")
         try {
             Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType "application/x-www-form-urlencoded; charset=utf-8" | Out-Null
@@ -82,25 +84,33 @@ function Send-TelegramText([string]$text, [string]$replyMarkupJson = "") {
     }
 }
 
-function Send-TelegramPhotoWithPlan([string]$imagePath, [string]$caption, [string]$replyMarkupJson = "") {
+function Send-TelegramPhoto([string]$imagePath, [string]$caption = "", [string]$replyMarkupJson = "") {
     $url = "$telegramEndpoint/sendPhoto"
-    Write-Host "[*] Sending image and plan to Telegram..." -ForegroundColor Cyan
+    Write-Host "[*] Sending image to Telegram: $imagePath" -ForegroundColor Cyan
 
     $curlExe = if (Test-Path "$env:SystemRoot\System32\curl.exe") { "$env:SystemRoot\System32\curl.exe" } else { "curl" }
 
-    # Save caption to a temporary UTF-8 file to prevent Windows command line multiline truncation
-    $tempCaptionFile = Join-Path $capturesDir "caption_temp.txt"
-    [System.IO.File]::WriteAllText($tempCaptionFile, $caption, [System.Text.Encoding]::UTF8)
+    # Ensure forward slashes for Windows curl compatibility
+    $curlImagePath = $imagePath.Replace("\", "/")
 
-    # 1. Attempt sending with Markdown formatting
+    $tempCaptionFile = $null
     $argsList = @(
         "-s",
         "-X", "POST", $url,
         "-F", "chat_id=$chatId",
-        "-F", "photo=@$imagePath",
-        "-F", "caption=<$tempCaptionFile",
-        "-F", "parse_mode=Markdown"
+        "-F", "photo=@$curlImagePath"
     )
+
+    if ($caption) {
+        $tempCaptionFile = Join-Path $capturesDir ("cap_" + [System.IO.Path]::GetRandomFileName() + ".txt")
+        [System.IO.File]::WriteAllText($tempCaptionFile, $caption, [System.Text.Encoding]::UTF8)
+        $curlCaptionPath = $tempCaptionFile.Replace("\", "/")
+        $argsList += "-F"
+        $argsList += "caption=<$curlCaptionPath"
+        $argsList += "-F"
+        $argsList += "parse_mode=Markdown"
+    }
+
     if ($replyMarkupJson) {
         $argsList += "-F"
         $argsList += "reply_markup=$replyMarkupJson"
@@ -109,15 +119,15 @@ function Send-TelegramPhotoWithPlan([string]$imagePath, [string]$caption, [strin
     $rawResp = & $curlExe @argsList
     $respText = if ($rawResp -is [array]) { $rawResp -join "" } else { [string]$rawResp }
 
-    # 2. If Markdown parse fails, retry without Markdown formatting
-    if (-not $respText.Contains('"ok":true')) {
-        Write-Warning "Telegram send with Markdown failed ($respText). Retrying without parse_mode..."
+    # Fallback without Markdown formatting if Telegram rejected Markdown parsing
+    if ($caption -and (-not $respText.Contains('"ok":true'))) {
+        Write-Warning "Telegram send with Markdown failed. Retrying without parse_mode..."
         $argsListFallback = @(
             "-s",
             "-X", "POST", $url,
             "-F", "chat_id=$chatId",
-            "-F", "photo=@$imagePath",
-            "-F", "caption=<$tempCaptionFile"
+            "-F", "photo=@$curlImagePath",
+            "-F", "caption=<$curlCaptionPath"
         )
         if ($replyMarkupJson) {
             $argsListFallback += "-F"
@@ -127,18 +137,18 @@ function Send-TelegramPhotoWithPlan([string]$imagePath, [string]$caption, [strin
         $respText = if ($rawResp -is [array]) { $rawResp -join "" } else { [string]$rawResp }
     }
 
-    # Clean up temp caption file
-    if (Test-Path $tempCaptionFile) {
+    if ($tempCaptionFile -and (Test-Path $tempCaptionFile)) {
         Remove-Item -Path $tempCaptionFile -Force -ErrorAction SilentlyContinue
     }
 
     if ($respText.Contains('"ok":true')) {
-        Write-Host "[+] Successfully sent plan photo to Telegram!" -ForegroundColor Green
+        Write-Host "[+] Successfully sent photo to Telegram!" -ForegroundColor Green
         return $true
     } else {
-        Write-Host "[!] Telegram error: $respText" -ForegroundColor Red
-        # Fallback: Send caption as regular text message
-        Send-TelegramText $caption $replyMarkupJson
+        Write-Host "[!] Telegram sendPhoto error: $respText" -ForegroundColor Red
+        if ($caption) {
+            Send-TelegramText $caption $replyMarkupJson
+        }
         return $false
     }
 }
@@ -214,6 +224,13 @@ function Capture-DualScreens() {
         $bmpLeft.Dispose()
         $bmpRight.Dispose()
         $stitchedBmp.Dispose()
+
+        return @{
+            Left = $leftPath
+            Right = $rightPath
+            Stitched = $stitchedPath
+            IsDual = $true
+        }
     } else {
         $mon = $allScreens[0]
         Write-Host "[*] Detected 1 monitor: $($mon.Bounds.Width)x$($mon.Bounds.Height)" -ForegroundColor Yellow
@@ -223,9 +240,14 @@ function Capture-DualScreens() {
         $bmp.Save($stitchedPath, [System.Drawing.Imaging.ImageFormat]::Png)
         $g.Dispose()
         $bmp.Dispose()
-    }
 
-    return $stitchedPath
+        return @{
+            Left = $stitchedPath
+            Right = $stitchedPath
+            Stitched = $stitchedPath
+            IsDual = $false
+        }
+    }
 }
 
 # 4. Cleanup captures folder
@@ -233,35 +255,35 @@ function Cleanup-Captures() {
     try {
         [System.GC]::Collect()
         [System.GC]::WaitForPendingFinalizers()
-        Get-ChildItem -Path $capturesDir -Include "*.png", "*.jpg", "*.jpeg" -File -Recurse | Remove-Item -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $capturesDir -Include "*.png", "*.jpg", "*.jpeg", "*.txt" -File -Recurse | Remove-Item -Force -ErrorAction SilentlyContinue
         Write-Host "[*] Cleaned up temporary files in data/captures" -ForegroundColor Gray
     } catch {
         Write-Warning "Could not delete temporary captures: $_"
     }
 }
 
-# 5. Core Trigger Function
-$script:isAnalyzing = $false
+# 5. Core Trigger Function: Daily Plan Analysis
+$script:isProcessing = $false
 
 function Trigger-DailyPlanAnalysis() {
-    if ($script:isAnalyzing) {
+    if ($script:isProcessing) {
         Send-TelegramText $msg.busy
         return
     }
 
-    $script:isAnalyzing = $true
+    $script:isProcessing = $true
     try {
         Write-Host ""
         Write-Host "[>>>] Triggering Daily Plan analysis..." -ForegroundColor Yellow
         Send-TelegramText $msg.start
 
         # 1. Capture dual screens
-        $stitchedImage = Capture-DualScreens
-        Write-Host "[+] Captured and stitched screens: $stitchedImage" -ForegroundColor Green
+        $caps = Capture-DualScreens
+        Write-Host "[+] Captured dual screens: Left=$($caps.Left), Right=$($caps.Right)" -ForegroundColor Green
 
         # 2. Prepare prompt for agy
         $todayStr = (Get-Date).ToString("dd/MM/yyyy")
-        $prompt = [string]::Format($promptTemplate, $symbol, $stitchedImage, $todayStr)
+        $prompt = [string]::Format($promptTemplate, $symbol, $caps.Stitched, $todayStr)
 
         Write-Host "[*] Calling agy ($modelName) for analysis..." -ForegroundColor Cyan
         $agyOutput = & agy -p $prompt --model $modelName --dangerously-skip-permissions --disable-slash-commands --output-format json --json-schema $schemaFilePath
@@ -314,25 +336,68 @@ function Trigger-DailyPlanAnalysis() {
         Write-Host $finalCaption -ForegroundColor Green
         Write-Host ""
 
-        # Inline button for next update (explicit 2D array for Telegram)
-        $planButtonMarkup = '{"inline_keyboard":[[{"text":"' + $msg.btn_plan + '","callback_data":"trigger_plan"}]]}'
+        # 3. Send 2 separate photos to Telegram
+        if ($caps.IsDual) {
+            # Photo 1: Left Monitor (VP & Footprint)
+            Send-TelegramPhoto -imagePath $caps.Left -caption $msg.caption_left
 
-        # 3. Send photo and caption to Telegram
-        Send-TelegramPhotoWithPlan -imagePath $stitchedImage -caption $finalCaption -replyMarkupJson $planButtonMarkup
+            # Photo 2: Right Monitor (Bookmap) with the Daily Plan caption and action buttons
+            Send-TelegramPhoto -imagePath $caps.Right -caption $finalCaption -replyMarkupJson $actionButtonsMarkup
+        } else {
+            Send-TelegramPhoto -imagePath $caps.Stitched -caption $finalCaption -replyMarkupJson $actionButtonsMarkup
+        }
 
     } catch {
         Write-Host "[!] Error during analysis: $_" -ForegroundColor Red
         Send-TelegramText ($msg.err + $_)
     } finally {
         Cleanup-Captures
-        $script:isAnalyzing = $false
+        $script:isProcessing = $false
     }
 }
 
-# 6. Startup Message & Telegram Listener
-$initMarkup = '{"inline_keyboard":[[{"text":"' + $msg.btn_plan + '","callback_data":"trigger_plan"}]]}'
+# 6. Capture-Only Trigger Function (Instant capture without AI delay)
+function Trigger-ScreenCaptureOnly() {
+    if ($script:isProcessing) {
+        Send-TelegramText $msg.busy
+        return
+    }
 
-Send-TelegramText $msg.startup $initMarkup
+    $script:isProcessing = $true
+    try {
+        Write-Host ""
+        Write-Host "[>>>] Triggering Instant Screen Capture..." -ForegroundColor Yellow
+        Send-TelegramText $msg.capture_start
+
+        $caps = Capture-DualScreens
+        $nowStr = (Get-Date).ToString("HH:mm:ss dd/MM/yyyy")
+
+        if ($caps.IsDual) {
+            # Photo 1: Left Monitor
+            $captionLeft = $msg.caption_left + [System.Environment]::NewLine + "⏰ " + $nowStr
+            Send-TelegramPhoto -imagePath $caps.Left -caption $captionLeft
+
+            # Photo 2: Right Monitor with action buttons
+            $captionRight = $msg.caption_right + [System.Environment]::NewLine + "⏰ " + $nowStr
+            Send-TelegramPhoto -imagePath $caps.Right -caption $captionRight -replyMarkupJson $actionButtonsMarkup
+        } else {
+            $singleCaption = "🖥️ *ẢNH CHỤP MÀN HÌNH*" + [System.Environment]::NewLine + "⏰ " + $nowStr
+            Send-TelegramPhoto -imagePath $caps.Stitched -caption $singleCaption -replyMarkupJson $actionButtonsMarkup
+        }
+
+        Write-Host "[+] Successfully delivered dual screen captures to Telegram!" -ForegroundColor Green
+
+    } catch {
+        Write-Host "[!] Error during capture: $_" -ForegroundColor Red
+        Send-TelegramText ($msg.err + $_)
+    } finally {
+        Cleanup-Captures
+        $script:isProcessing = $false
+    }
+}
+
+# 7. Startup Message & Telegram Listener Loop
+Send-TelegramText $msg.startup $actionButtonsMarkup
 
 Write-Host ""
 Write-Host "[+] Service is active and listening for Telegram events..." -ForegroundColor Green
@@ -350,7 +415,7 @@ while ($true) {
             foreach ($upd in $response.result) {
                 $lastUpdateId = [int64]$upd.update_id
 
-                # Handle button click
+                # Handle button click (callback queries)
                 if ($upd.callback_query) {
                     $cb = $upd.callback_query
                     $cbId = $cb.id
@@ -360,6 +425,10 @@ while ($true) {
                         Write-Host "[Telegram] Button pressed: Cap nhat lai Plan" -ForegroundColor Yellow
                         Answer-CallbackQuery -callbackQueryId $cbId -toastText $msg.toast
                         Trigger-DailyPlanAnalysis
+                    } elseif ($data -eq "trigger_capture") {
+                        Write-Host "[Telegram] Button pressed: Chup man hinh" -ForegroundColor Yellow
+                        Answer-CallbackQuery -callbackQueryId $cbId -toastText $msg.toast_capture
+                        Trigger-ScreenCaptureOnly
                     }
                 }
 
@@ -368,10 +437,13 @@ while ($true) {
                     $msgText = $upd.message.text.Trim().ToLower()
 
                     if ($msgText -in @("/start", "/help")) {
-                        Send-TelegramText $msg.welcome $initMarkup
+                        Send-TelegramText $msg.welcome $actionButtonsMarkup
                     } elseif ($msgText -eq "/plan") {
                         Write-Host "[Telegram] Received command: /plan" -ForegroundColor Yellow
                         Trigger-DailyPlanAnalysis
+                    } elseif ($msgText -eq "/capture") {
+                        Write-Host "[Telegram] Received command: /capture" -ForegroundColor Yellow
+                        Trigger-ScreenCaptureOnly
                     }
                 }
             }
