@@ -311,7 +311,7 @@ class TelegramNotifier:
         text = f"⚙️ **SYSTEM ALERT**\n{message}"
         self.send_text(text)
 
-    def send_text(self, text: str) -> None:
+    def send_text(self, text: str, reply_markup: Optional[dict] = None) -> None:
         try:
             with httpx.Client(timeout=10.0) as client:
                 url = f"{self.base_url}/sendMessage"
@@ -320,6 +320,8 @@ class TelegramNotifier:
                     "text": text,
                     "parse_mode": "Markdown",
                 }
+                if reply_markup:
+                    payload["reply_markup"] = reply_markup
                 client.post(url, json=payload)
         except Exception as e:
             logger.error(f"Failed to send Telegram text: {e}")
@@ -372,7 +374,18 @@ class TelegramNotifier:
                     if "message" in update and "text" in update["message"]:
                         text = update["message"]["text"].strip().lower()
 
-                        if text == "/pause":
+                        if text in ("/start", "/help"):
+                            reply_markup = {
+                                "inline_keyboard": [
+                                    [{"text": "🔄 Cập nhật lại Plan", "callback_data": "trigger_plan"}]
+                                ]
+                            }
+                            self.send_text(
+                                "👋 Xin chào! Hệ thống Bot phân tích Order Flow đang trực tuyến.\n\n"
+                                "Bấm nút **[🔄 Cập nhật lại Plan]** bên dưới để kích hoạt chụp 2 màn hình và phân tích kế hoạch mới nhất.",
+                                reply_markup=reply_markup,
+                            )
+                        elif text == "/pause":
                             self.is_paused = True
                             self.send_text("⏸️ Trading Agent is now **PAUSED**. Signals suppressed.")
                         elif text == "/resume":

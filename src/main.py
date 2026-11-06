@@ -114,23 +114,33 @@ class TradingSignalAgent:
         self.last_plan_date: Optional[str] = (
             self.daily_planner.current_plan.date if self.daily_planner.current_plan else None
         )
+        self._is_analyzing: bool = False
 
     def trigger_daily_plan(self) -> None:
-        """Triggers Daily Plan generation on-demand or at 08:00 AM."""
-        logger.info("Executing Daily Plan generation...")
-        plan = self.daily_planner.generate_plan()
-        if plan:
-            self.last_plan_date = plan.date
-            # Capture snapshot to attach with plan
-            latest_img = Path(self.config.capture.output_dir) / f"daily_plan_active.png"
-            if not latest_img.exists():
-                latest_img = None
-            self.notifier.send_daily_plan(plan, latest_img)
-            logger.info(f"Daily Plan {plan.date} generated and sent to Telegram.")
+        """Triggers Daily Plan generation on-demand via Telegram button or schedule."""
+        if self._is_analyzing:
+            self.notifier.send_text("⏳ Đang có một tiến trình phân tích đang chạy, vui lòng chờ trong giây lát...")
+            return
+
+        self._is_analyzing = True
+        try:
+            logger.info("Executing Daily Plan generation triggered by user/Telegram...")
+            self.notifier.send_text("🔄 Bắt đầu chụp 2 màn hình (VP/Footprint & Bookmap) và phân tích kế hoạch...")
+            plan = self.daily_planner.generate_plan()
+            if plan:
+                self.last_plan_date = plan.date
+                captured_img = self.daily_planner.last_captured_image
+                self.notifier.send_daily_plan(plan, captured_img)
+                logger.info(f"Daily Plan {plan.date} generated and sent to Telegram.")
+            else:
+                self.notifier.send_system_alert("⚠️ Không thể tạo Daily Plan. Vui lòng kiểm tra màn hình và agy CLI.")
+        except Exception as e:
+            logger.error(f"Error in trigger_daily_plan: {e}", exc_info=True)
+            self.notifier.send_system_alert(f"⚠️ Lỗi khi phân tích kế hoạch: {e}")
+        finally:
             # Dọn dẹp: Xóa toàn bộ ảnh trong folder captures sau khi xử lý và gửi Telegram xong
             self.capture_service.cleanup_captures()
-        else:
-            self.notifier.send_system_alert("⚠️ Không thể tạo Daily Plan tự động. Vui lòng kiểm tra màn hình và agy CLI.")
+            self._is_analyzing = False
 
     def check_daily_plan_schedule(self) -> None:
         """Auto-triggers plan at 08:00 AM local time if not already created today."""
@@ -152,7 +162,18 @@ class TradingSignalAgent:
             logger.warning(f"MT5 initial connection warning: {e}")
 
         if self.notifier.is_configured:
-            self.notifier.send_text("🚀 **Trading Signal Agent Initialized & Active**")
+            reply_markup = {
+                "inline_keyboard": [
+                    [
+                        {"text": "🔄 Cập nhật lại Plan", "callback_data": "trigger_plan"},
+                    ]
+                ]
+            }
+            self.notifier.send_text(
+                "🚀 **Trading Signal Agent đã khởi động & đang chạy thường trực.**\n\n"
+                "📌 Bấm nút **[🔄 Cập nhật lại Plan]** bên dưới (hoặc gửi `/plan`) bất kỳ lúc nào để kích hoạt phân tích 2 màn hình.",
+                reply_markup=reply_markup,
+            )
 
     def run_single_cycle(self) -> Optional[SignalDecision]:
         """Executes one full analysis cycle (T-10s -> Candle Close)."""
@@ -264,54 +285,27 @@ class TradingSignalAgent:
         return decision
 
     def start_loop(self) -> None:
-        """Main service loop running every 5 minutes at T-10s."""
+        """Main service daemon loop waiting for Telegram triggers."""
         self.startup()
-        logger.info("Trading Signal Agent main loop running. Waiting for cycle triggers...")
+        logger.info("Trading Signal Agent daemon running. Listening for Telegram events...")
 
         while True:
             try:
-                # Check 08:00 AM daily plan auto-generation
+                # Check 08:00 AM daily plan auto-generation if enabled
                 self.check_daily_plan_schedule()
 
-                # Poll Telegram commands & feedback buttons continuously
+                # Poll Telegram commands & feedback buttons
                 self.notifier.process_updates()
 
-                # Calculate sleep duration to next T-10s trigger
-                seconds_to_wait = get_seconds_until_next_t_minus(
-                    timeframe_minutes=self.config.trading.timeframe_minutes,
-                    t_minus_seconds=self.config.trading.t_minus_seconds,
-                )
-
-                # Check heartbeat (ST-007 AC-2)
-                if not self.storage.check_heartbeat(
-                    max_idle_minutes=self.config.storage.heartbeat_timeout_minutes
-                ):
-                    logger.warning("Heartbeat alert: No successful cycle recorded in 15 minutes.")
-                    self.notifier.send_system_alert(
-                        "⚠️ Heartbeat warning: No successful cycle in 15 minutes."
-                    )
-
-                # Sleep in small slices to remain responsive to Telegram updates
-                while seconds_to_wait > 2.0:
-                    time.sleep(2.0)
-                    self.notifier.process_updates()
-                    seconds_to_wait = get_seconds_until_next_t_minus(
-                        timeframe_minutes=self.config.trading.timeframe_minutes,
-                        t_minus_seconds=self.config.trading.t_minus_seconds,
-                    )
-
-                if seconds_to_wait > 0:
-                    time.sleep(seconds_to_wait)
-
-                # Trigger cycle!
-                self.run_single_cycle()
+                # Sleep brief interval to keep CPU usage minimal
+                time.sleep(1.0)
 
             except KeyboardInterrupt:
                 logger.info("Graceful shutdown requested by user.")
                 break
             except Exception as e:
                 logger.error(f"Unexpected error in main loop: {e}", exc_info=True)
-                time.sleep(5.0)
+                time.sleep(3.0)
 
 
 def main():

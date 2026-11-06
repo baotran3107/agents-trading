@@ -27,6 +27,7 @@ class DailyPlanner:
         self.plan_file = Path(config.daily_plan.plan_file)
         self.plan_file.parent.mkdir(parents=True, exist_ok=True)
         self.current_plan: Optional[DailyPlan] = self.load_active_plan()
+        self.last_captured_image: Optional[Path] = None
 
     def load_active_plan(self) -> Optional[DailyPlan]:
         if not self.plan_file.exists():
@@ -54,6 +55,8 @@ class DailyPlanner:
             image_path = self.capture_service.capture(filename=f"daily_plan_{timestamp_str}.png")
         else:
             logger.info(f"Using provided chart image for daily plan: {image_path}")
+
+        self.last_captured_image = image_path
 
         # 2. Prompt for Order Flow Daily Plan
         schema_str = json.dumps(get_daily_plan_json_schema())
