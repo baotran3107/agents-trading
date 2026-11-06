@@ -103,6 +103,9 @@ function Send-TelegramPhoto([string]$imagePath, [string]$caption = "", [string]$
     $tempCaptionFile = $null
     $tempMarkupFile = $null
 
+    # Create UTF-8 encoding WITHOUT BOM to prevent Telegram JSON parsing errors (0xEF 0xBB 0xBF)
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
     $argsList = @(
         "-s",
         "-X", "POST", $url,
@@ -112,7 +115,7 @@ function Send-TelegramPhoto([string]$imagePath, [string]$caption = "", [string]$
 
     if ($caption) {
         $tempCaptionFile = Join-Path $capturesDir ("cap_" + [System.IO.Path]::GetRandomFileName() + ".txt")
-        [System.IO.File]::WriteAllText($tempCaptionFile, $caption, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText($tempCaptionFile, $caption, $utf8NoBom)
         $curlCaptionPath = $tempCaptionFile.Replace("\", "/")
         $argsList += "-F"
         $argsList += "caption=<$curlCaptionPath"
@@ -122,7 +125,7 @@ function Send-TelegramPhoto([string]$imagePath, [string]$caption = "", [string]$
 
     if ($replyMarkupJson) {
         $tempMarkupFile = Join-Path $capturesDir ("btn_" + [System.IO.Path]::GetRandomFileName() + ".json")
-        [System.IO.File]::WriteAllText($tempMarkupFile, $replyMarkupJson, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText($tempMarkupFile, $replyMarkupJson, $utf8NoBom)
         $curlMarkupPath = $tempMarkupFile.Replace("\", "/")
         $argsList += "-F"
         $argsList += "reply_markup=<$curlMarkupPath"
@@ -131,22 +134,56 @@ function Send-TelegramPhoto([string]$imagePath, [string]$caption = "", [string]$
     $rawResp = & $curlExe @argsList
     $respText = if ($rawResp -is [array]) { $rawResp -join "" } else { [string]$rawResp }
 
-    # Fallback without Markdown formatting if Telegram rejected Markdown parsing
-    if ($caption -and (-not $respText.Contains('"ok":true'))) {
-        Write-Warning "Telegram send with Markdown failed ($respText). Retrying without parse_mode..."
-        $argsListFallback = @(
-            "-s",
-            "-X", "POST", $url,
-            "-F", "chat_id=$chatId",
-            "-F", "photo=@$curlImagePath",
-            "-F", "caption=<$curlCaptionPath"
-        )
-        if ($tempMarkupFile) {
-            $argsListFallback += "-F"
-            $argsListFallback += "reply_markup=<$curlMarkupPath"
+    # Fallback retry handling if Telegram rejected request
+    if (-not $respText.Contains('"ok":true')) {
+        # Retry 1: If Markdown parsing error, retry without parse_mode
+        if ($caption -and ($respText.Contains("can't parse entities") -or $respText.Contains("Bad Request"))) {
+            Write-Warning "Telegram send with Markdown failed. Retrying without parse_mode..."
+            $argsListFallback = @(
+                "-s",
+                "-X", "POST", $url,
+                "-F", "chat_id=$chatId",
+                "-F", "photo=@$curlImagePath",
+                "-F", "caption=<$curlCaptionPath"
+            )
+            if ($tempMarkupFile) {
+                $argsListFallback += "-F"
+                $argsListFallback += "reply_markup=<$curlMarkupPath"
+            }
+            $rawResp = & $curlExe @argsListFallback
+            $respText = if ($rawResp -is [array]) { $rawResp -join "" } else { [string]$rawResp }
         }
-        $rawResp = & $curlExe @argsListFallback
-        $respText = if ($rawResp -is [array]) { $rawResp -join "" } else { [string]$rawResp }
+
+        # Retry 2: If reply_markup caused failure, retry photo without reply_markup so photo is never lost
+        if ((-not $respText.Contains('"ok":true')) -and $tempMarkupFile) {
+            Write-Warning "Telegram send photo with reply_markup failed. Retrying photo without buttons..."
+            $argsListNoMarkup = @(
+                "-s",
+                "-X", "POST", $url,
+                "-F", "chat_id=$chatId",
+                "-F", "photo=@$curlImagePath"
+            )
+            if ($tempCaptionFile) {
+                $argsListNoMarkup += "-F"
+                $argsListNoMarkup += "caption=<$curlCaptionPath"
+            }
+            $rawResp = & $curlExe @argsListNoMarkup
+            $respText = if ($rawResp -is [array]) { $rawResp -join "" } else { [string]$rawResp }
+
+            if ($respText.Contains('"ok":true') -and $replyMarkupJson) {
+                Send-TelegramText "👇 Các thao tác nhanh:" $replyMarkupJson
+            }
+        }
+
+        # Retry 3: If caption too long or rejected, retry photo alone and send caption via text
+        if ((-not $respText.Contains('"ok":true')) -and $tempCaptionFile) {
+            Write-Warning "Telegram send photo with caption failed. Retrying photo only..."
+            $rawResp = & $curlExe -s -X POST $url -F "chat_id=$chatId" -F "photo=@$curlImagePath"
+            $respText = if ($rawResp -is [array]) { $rawResp -join "" } else { [string]$rawResp }
+            if ($respText.Contains('"ok":true') -and $caption) {
+                Send-TelegramText $caption $replyMarkupJson
+            }
+        }
     }
 
     # Clean up temp files
