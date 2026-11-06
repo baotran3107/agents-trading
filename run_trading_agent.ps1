@@ -13,6 +13,7 @@ $envPath = Join-Path $scriptDir ".env"
 $capturesDir = Join-Path $scriptDir "data\captures"
 $msgConfigPath = Join-Path $scriptDir "config\messages.json"
 $promptFilePath = Join-Path $scriptDir "prompts\plan_prompt.txt"
+$schemaFilePath = Join-Path $scriptDir "config\daily_plan_schema.json"
 
 if (-not (Test-Path $capturesDir)) {
     New-Item -ItemType Directory -Path $capturesDir -Force | Out-Null
@@ -213,14 +214,12 @@ function Trigger-DailyPlanAnalysis() {
         $stitchedImage = Capture-DualScreens
         Write-Host "[+] Captured and stitched screens: $stitchedImage" -ForegroundColor Green
 
-        # 2. Prepare JSON schema and prompt for agy
-        $schemaJson = '{"type":"object","properties":{"date":{"type":"string"},"overview":{"type":"string"},"plans":{"type":"array","items":{"type":"object","properties":{"plan_number":{"type":"integer"},"bias":{"type":"string"},"wait_zone_low":{"type":"number"},"wait_zone_high":{"type":"number"},"entry_condition":{"type":"string"}},"required":["plan_number","bias","wait_zone_low","wait_zone_high","entry_condition"]}}},"required":["date","overview","plans"]}'
-
+        # 2. Prepare prompt for agy
         $todayStr = (Get-Date).ToString("dd/MM/yyyy")
         $prompt = [string]::Format($promptTemplate, $symbol, $stitchedImage, $todayStr)
 
         Write-Host "[*] Calling agy ($modelName) for analysis..." -ForegroundColor Cyan
-        $agyOutput = & agy -p $prompt --model $modelName --disable-slash-commands --output-format json --json-schema $schemaJson
+        $agyOutput = & agy -p $prompt --model $modelName --disable-slash-commands --output-format json --json-schema $schemaFilePath
 
         if (-not $agyOutput) {
             throw "CLI agy did not return output!"
@@ -270,18 +269,8 @@ function Trigger-DailyPlanAnalysis() {
         Write-Host $finalCaption -ForegroundColor Green
         Write-Host ""
 
-        # Inline button for next update
-        $markupObj = @{
-            inline_keyboard = @(
-                @(
-                    @{
-                        text = $msg.btn_plan
-                        callback_data = "trigger_plan"
-                    }
-                )
-            )
-        }
-        $planButtonMarkup = ($markupObj | ConvertTo-Json -Compress)
+        # Inline button for next update (explicit 2D array for Telegram)
+        $planButtonMarkup = '{"inline_keyboard":[[{"text":"' + $msg.btn_plan + '","callback_data":"trigger_plan"}]]}'
 
         # 3. Send photo and caption to Telegram
         Send-TelegramPhotoWithPlan -imagePath $stitchedImage -caption $finalCaption -replyMarkupJson $planButtonMarkup
@@ -297,17 +286,7 @@ function Trigger-DailyPlanAnalysis() {
 }
 
 # 6. Startup Message & Telegram Listener
-$initMarkupObj = @{
-    inline_keyboard = @(
-        @(
-            @{
-                text = $msg.btn_plan
-                callback_data = "trigger_plan"
-            }
-        )
-    )
-}
-$initMarkup = ($initMarkupObj | ConvertTo-Json -Compress)
+$initMarkup = '{"inline_keyboard":[[{"text":"' + $msg.btn_plan + '","callback_data":"trigger_plan"}]]}'
 
 Send-TelegramText $msg.startup $initMarkup
 

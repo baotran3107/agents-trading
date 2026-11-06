@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "date": { "type": "string" },
+    "overview": { "type": "string" },
+    "plans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "plan_number": { "type": "integer" },
+          "bias": { "type": "string" },
+          "wait_zone_low": { "type": "number" },
+          "wait_zone_high": { "type": "number" },
+          "entry_condition": { "type": "string" }
+        },
+        "required": ["plan_number", "bias", "wait_zone_low", "wait_zone_high", "entry_condition"]
+      }
+    }
+  },
+  "required": ["date", "overview", "plans"]
+}
