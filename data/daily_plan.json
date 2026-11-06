@@ -1,29 +1,29 @@
 {
   "date": "06/11/2026",
-  "symbol": "XAUUSD",
-  "overview": "Vàng tích lũy cân bằng quanh POC 2699.5, hấp thụ hai đầu 2697.1-2701.6 chờ bứt phá thanh khoản.",
+  "symbol": "GCZ6",
+  "overview": "Thị trường xu hướng giảm mạnh, đang tích lũy cân bằng ngắn hạn quanh vùng 4075.",
   "plans": [
     {
       "plan_number": 1,
-      "bias": "BUY",
-      "wait_zone_low": 2696.8,
-      "wait_zone_high": 2697.5,
-      "entry_condition": "Giá quét thanh khoản đáy M15 (2696.8-2697.5), xuất hiện hấp thụ bán (Seller Exhaustion) trên Footprint, Delta đảo chiều dương và tường Limit Buy dày đỡ giá trên Bookmap."
+      "bias": "SELL",
+      "wait_zone_low": 4098.0,
+      "wait_zone_high": 4105.0,
+      "entry_condition": "Giá hồi về vùng kháng cự POC/tường bán 4100-4105, xuất hiện hấp thụ mua (absorption) và mất cân bằng bán (sell imbalance) trên Footprint."
     },
     {
       "plan_number": 2,
-      "bias": "SELL",
-      "wait_zone_low": 2701.2,
-      "wait_zone_high": 2702.0,
-      "entry_condition": "Giá kiểm định vùng đỉnh M15/VAH (2701.2-2702.0), xuất hiện cụm hấp thụ mua trên Footprint kèm tường Limit Sell chặn trên Bookmap và CVD suy yếu phân kỳ."
+      "bias": "BUY",
+      "wait_zone_low": 4055.0,
+      "wait_zone_high": 4062.0,
+      "entry_condition": "Giá quét thanh khoản tại hỗ trợ Bookmap 4055-4060, xuất hiện delta dương đột biến và hấp thụ bán thành công trên Footprint."
     },
     {
       "plan_number": 3,
-      "bias": "BUY",
-      "wait_zone_low": 2701.0,
-      "wait_zone_high": 2701.6,
-      "entry_condition": "Phá vỡ xác nhận qua 2701.6 với Stacked Buy Imbalance trên Footprint và bong bóng khớp lệnh mua chủ động lớn nuốt trọn tường thanh khoản bán trên Bookmap, chờ nhịp retest 2701.0-2701.6."
+      "bias": "SELL",
+      "wait_zone_low": 4068.0,
+      "wait_zone_high": 4075.0,
+      "entry_condition": "Giá phá vỡ đáy 4068 với volume bán chủ động mạnh, retest không thể vượt qua VAL và xuất hiện bẫy mua (trapped buyers) trên Bookmap."
     }
   ],
-  "generated_at": "2026-11-06T10:12:11+07:00"
+  "generated_at": "2026-11-06T10:36:17+07:00"
 }

@@ -178,7 +178,7 @@ def main():
     )
 
     # 4. Generate plan via Argon AI
-    print("\n🧠 Đang gọi Argon AI để phân tích Volume Profile, Footprint và Bookmap...")
+    print("\n🧠 Đang gọi Gemini để phân tích Volume Profile, Footprint và Bookmap...")
     start_t = time.perf_counter()
     plan = planner.generate_plan(image_path=image_path)
     elapsed = time.perf_counter() - start_t
