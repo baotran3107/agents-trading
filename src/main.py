@@ -127,6 +127,8 @@ class TradingSignalAgent:
                 latest_img = None
             self.notifier.send_daily_plan(plan, latest_img)
             logger.info(f"Daily Plan {plan.date} generated and sent to Telegram.")
+            # Dọn dẹp: Xóa toàn bộ ảnh trong folder captures sau khi xử lý và gửi Telegram xong
+            self.capture_service.cleanup_captures()
         else:
             self.notifier.send_system_alert("⚠️ Không thể tạo Daily Plan tự động. Vui lòng kiểm tra màn hình và agy CLI.")
 
@@ -255,6 +257,9 @@ class TradingSignalAgent:
             telegram_message_id=telegram_msg_id,
             recheck_status=recheck_status,
         )
+
+        # Dọn dẹp: Xóa toàn bộ ảnh trong folder captures sau khi xử lý và gửi Telegram xong
+        self.capture_service.cleanup_captures()
 
         return decision
 

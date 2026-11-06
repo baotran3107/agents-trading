@@ -139,6 +139,7 @@ def main():
     parser = argparse.ArgumentParser(description="Test Plan Generation from Captures Folder")
     parser.add_argument("--image", type=str, default=None, help="Custom image path in data/captures")
     parser.add_argument("--stitch", action="store_true", help="Force re-stitching screenshots")
+    parser.add_argument("--keep", action="store_true", help="Giữ lại ảnh trong captures (mặc định sẽ tự động xóa sau khi gửi Telegram)")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -196,6 +197,12 @@ def main():
     print("\n📲 Đang gửi kết quả Daily Plan + ảnh chart sang Telegram...")
     notifier.send_daily_plan(plan=plan, image_path=image_path)
     print("✅ ĐÃ GỬI XONG! Vui lòng kiểm tra Telegram của bạn.")
+
+    # 6. Cleanup captures
+    if not args.keep:
+        print("\n🧹 Đang xóa toàn bộ hình trong folder captures...")
+        deleted = capture_svc.cleanup_captures()
+        print(f"✅ Đã dọn dẹp sạch {deleted} hình trong folder captures.")
 
 
 if __name__ == "__main__":
