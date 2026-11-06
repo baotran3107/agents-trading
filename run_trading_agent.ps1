@@ -6,13 +6,6 @@ $OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# Enable Per-Monitor DPI Awareness so secondary monitor coordinates and resolutions are physical and not blank
-try {
-    Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();' -Name "DpiAwareHelper" -Namespace "NativeDpi" -ErrorAction SilentlyContinue
-    [NativeDpi.DpiAwareHelper]::SetProcessDPIAware() | Out-Null
-    Write-Host "[*] DPI awareness enabled for multi-monitor capture." -ForegroundColor Gray
-} catch {}
-
 # 1. Environment & Config Setup
 $scriptDir = $PSScriptRoot
 if (-not $scriptDir) { $scriptDir = (Get-Location).Path }
