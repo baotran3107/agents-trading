@@ -1,11 +1,33 @@
-﻿<#
+<#
 .SYNOPSIS
     Order Flow Trading Agent - Windows Native PowerShell Daemon
     Zero Python dependencies. Native Windows dual-screen capture, agy CLI & Telegram integration.
+    Pure ASCII source code with UTF-8 runtime decoding to ensure 100% compatibility across all Windows versions.
 #>
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
+
+# UTF-8 string decoder for internationalized strings
+function u([string]$b64) {
+    [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
+}
+
+# Pre-encoded UTF-8 strings
+$TXT_PROMPT_TPL   = u "QuG6oW4gbMOgIG3hu5l0IGNodXnDqm4gZ2lhIGdpYW8gZOG7i2NoIMSR4buLbmggbMaw4bujbmcgdGhlbyBwaMawxqFuZyBwaMOhcCBPcmRlciBGbG93IHbDoCBBdWN0aW9uIE1hcmtldCBUaGVvcnkgcGjDom4gdMOtY2ggdsOgbmcgKHswfSkuCgpRdWFuIHPDoXQga+G7uSBow6xuaCDhuqNuaCBiaeG7g3UgxJHhu5MgMiBtw6BuIGjDrG5oIHThuqFpOiB7MX0KLSBNw4BOIEjDjE5IIFRSw4FJOiBD4bqldSB0csO6YyBWb2x1bWUgUHJvZmlsZSAoVkFILCBWQUwsIFBPQykgdsOgIGJp4buDdSDEkeG7kyBGb290cHJpbnQgKERlbHRhLCBj4bulbSBo4bqlcCB0aOG7pSwgbeG6pXQgY8OibiBi4bqxbmcgYmlkL2FzaykuCi0gTcOATiBIw4xOSCBQSOG6okk6IEJvb2ttYXAgKELhuqNuIMSR4buTIG5oaeG7h3QgdMaw4budbmcgdGhhbmgga2hv4bqjbiByZXN0aW5nIGxpbWl0IG9yZGVycywgQ1ZELCBib25nIGLDs25nIGto4bubcCBs4buHbmggY2jhu6cgxJHhu5luZykuCgpOR1Xhu5JOIEThu64gTEnhu4ZVOiBDaOG7iSDEkeG7jWMgdsOgIHBow6JuIHTDrWNoIHRy4buxYyB0aeG6v3AgdOG7qyDhuqNuaCBjaOG7pXAgMiBtw6BuIGjDrG5oIHRyw6puLiBUb8OgbiBi4buZIHRoYW5nIGdpw6EsIGPhuqV1IHRyw7pjIFZvbHVtZSBQcm9maWxlIHbDoCB0aGFuaCBraG/huqNuIEJvb2ttYXAgxJHhu4F1IHF1YW4gc8OhdCB0cuG7sWMgdGnhur9wIHThu6sgYmnhu4N1IMSR4buTIChraMO0bmcgZMO5bmcgYuG6pXQga+G7syBk4buvIGxp4buHdSBuw6BvIHThu6sgTVQ1KS4KClFVWSBU4bquQyBC4bquVCBCVeG7mEMgVuG7gCBOR8OUTiBOR+G7riBWw4AgTuG7mEkgRFVORzoKMS4gVE/DgE4gQuG7mCBO4buYSSBEVU5HIE3DlCBU4bqiIFBI4bqiSSDEkMav4buiQyBWSeG6vlQgSE/DgE4gVE/DgE4gQuG6sE5HIFRJ4bq+TkcgVknhu4ZUIChTVFJJQ1RMWSBWSUVUTkFNRVNFKS4KMi4gJ2RhdGUnOiDEkOG7i25oIGThuqFuZyBuZ8OgeSBi4bqvdCBideG7mWMgbMOgIGRkL21tL3l5eXkgKHbDrSBk4bulOiAnezJ9JykuCjMuICdvdmVydmlldyc6IFTDs20gdOG6r3QgYuG7kWkgY+G6o25oIHRo4buLIHRyxrDhu51uZyB0cm9uZyBuZ8OgeSB0aOG6rXQgY8O0IMSR4buNbmcsIFThu5BJIMSQQSAxMDAgS8OdIFThu7AgYuG6sW5nIHRp4bq/bmcgVmnhu4d0Lgo0LiAncGxhbnMnOiBU4bqhbyB04burIDIgxJHhur9uIDMga+G6vyBob+G6oWNoIGdpYW8gZOG7i2NoICgjUGxhbiAxLCAjUGxhbiAyLCAjUGxhbiAzKSwgbeG7l2kgcGxhbiBn4buTbToKICAgLSAncGxhbl9udW1iZXInOiAxLCAyIGhv4bq3YyAzCiAgIC0gJ2JpYXMnOiAnQlVZJyBob+G6t2MgJ1NFTEwnCiAgIC0gJ3dhaXRfem9uZV9sb3cnOiBt4bupYyBnacOhIHRo4bqlcCBj4bunYSB2w7luZyBjaOG7nSBwaOG6o24g4bupbmcKICAgLSAnd2FpdF96b25lX2hpZ2gnOiBt4bupYyBnacOhIGNhbyBj4bunYSB2w7luZyBjaOG7nSBwaOG6o24g4bupbmcKICAgLSAnZW50cnlfY29uZGl0aW9uJzogxJFp4buBdSBraeG7h24ga8OtY2ggaG/huqF0IHbDoG8gbOG7h25oIG5n4bqvbiBn4buNbiBzw7pjIHTDrWNoIHRoZW8gT3JkZXIgRmxvdyAoRm9vdHByaW50LCBCb29rbWFwKSBi4bqxbmcgdGnhur9uZyBWaeG7h3QuCjUuIFRy4bqjIHbhu4EgxJHDum5nIMSR4buLbmggZOG6oW5nIEpTT04gdGhlbyBzY2hlbWEgxJHDoyBjdW5nIGPhuqVwLg=="
+$TXT_HEADER_LEFT  = u "TcOATiBIw4xOSCBUUsOBSTogVk9MVU1FIFBST0ZJTEUgVsOAIEZPT1RQUklOVA=="
+$TXT_HEADER_RIGHT = u "TcOATiBIw4xOSCBQSOG6okk6IEJPT0tNQVA="
+$TXT_STARTUP      = u "8J+agCAqVHJhZGluZyBTaWduYWwgQWdlbnQgKFdpbmRvd3MgTmF0aXZlKSDEkcOjIGto4bufaSDEkeG7mW5nIHbDoCDEkWFuZyBjaOG6oXkgdGjGsOG7nW5nIHRy4buxYy4qCgrwn5OMIELhuqVtIG7DunQgKlvwn5SEIEPhuq1wIG5o4bqtdCBs4bqhaSBQbGFuXSogYsOqbiBkxrDhu5tpIChob+G6t2MgZ+G7rWkgL3BsYW4pIGLhuqV0IGvhu7MgbMO6YyBuw6BvIMSR4buDIGNo4bulcCAyIG3DoG4gaMOsbmggdsOgIHBow6JuIHTDrWNoIGvhur8gaG/huqFjaC4="
+$TXT_WELCOME      = u "8J+RiyBYaW4gY2jDoG8hIEjhu4cgdGjhu5FuZyBCb3QgcGjDom4gdMOtY2ggT3JkZXIgRmxvdyDEkWFuZyBob+G6oXQgxJHhu5luZyB0csOqbiBXaW5kb3dzLgoKQuG6pW0gbsO6dCAqW/CflIQgQ+G6rXAgbmjhuq10IGzhuqFpIFBsYW5dKiBiw6puIGTGsOG7m2kgxJHhu4Mga8OtY2ggaG/huqF0IHBow6JuIHTDrWNoLg=="
+$TXT_BUSY         = u "4o+zIMSQYW5nIGPDsyBt4buZdCB0aeG6v24gdHLDrG5oIHBow6JuIHTDrWNoIMSRYW5nIGNo4bqheSwgdnVpIGzDsm5nIGNo4budIHRyb25nIGdpw6J5IGzDoXQuLi4="
+$TXT_START        = u "8J+UhCBC4bqvdCDEkeG6p3UgY2jhu6VwIDIgbcOgbiBow6xuaCAoVlAvRm9vdHByaW50IHbDoCBCb29rbWFwKSB2w6AgcGjDom4gdMOtY2gga+G6vyBob+G6oWNoLi4u"
+$TXT_TOAST        = u "xJBhbmcgY2jhu6VwIDIgbcOgbiBow6xuaCB2w6AgcGjDom4gdMOtY2guLi4="
+$TXT_ERR          = u "4pqg77iPIEPDsyBs4buXaSB44bqjeSByYSB0cm9uZyBxdcOhIHRyw6xuaCBwaMOibiB0w61jaDog"
+$TXT_BTN_PLAN     = u "8J+UhCBD4bqtcCBuaOG6rXQgbOG6oWkgUGxhbg=="
+$TXT_DATE_LBL     = u "8J+ThSBL4bq/IGhv4bqhY2ggbmfDoHkg"
+$TXT_OVERVIEW_LBL = u "8J+TnSA="
+$TXT_WAIT_LBL     = u "4oCiIFbDuW5nIGNo4budOiA="
+$TXT_ENTRY_LBL    = u "4oCiIMSQaeG7gXUga2nhu4duIHbDoG86IA=="
 
 # Load .NET UI assemblies for multi-monitor capture & GDI+ graphics
 Add-Type -AssemblyName System.Windows.Forms
@@ -74,7 +96,6 @@ function Send-TelegramPhotoWithPlan([string]$imagePath, [string]$caption, [strin
     $url = "https://api.telegram.org/bot$botToken/sendPhoto"
     Write-Host "[*] Dang gui anh va ke hoach sang Telegram..." -ForegroundColor Cyan
 
-    # Use curl.exe (built-in on Windows 10/11) for reliable multipart/form-data upload
     if (Test-Path "$env:SystemRoot\System32\curl.exe") {
         $curlExe = "$env:SystemRoot\System32\curl.exe"
     } else {
@@ -116,7 +137,6 @@ function Capture-DualScreens() {
     $rightPath = Join-Path $capturesDir "chart_right_$timestamp.png"
     $stitchedPath = Join-Path $capturesDir "chart_stitched_$timestamp.png"
 
-    # Sort screens horizontally (left screen has smallest X coordinate)
     $allScreens = [System.Windows.Forms.Screen]::AllScreens | Sort-Object { $_.Bounds.X }
 
     if ($allScreens.Count -ge 2) {
@@ -157,8 +177,8 @@ function Capture-DualScreens() {
 
         $font = New-Object System.Drawing.Font("Arial", 14, [System.Drawing.FontStyle]::Bold)
         $textBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
-        $gStitched.DrawString("MÀN HÌNH TRÁI: VOLUME PROFILE & FOOTPRINT", $font, $textBrush, 20, 10)
-        $gStitched.DrawString("MÀN HÌNH PHẢI: BOOKMAP", $font, $textBrush, ($bmpLeft.Width + 20), 10)
+        $gStitched.DrawString($TXT_HEADER_LEFT, $font, $textBrush, 20, 10)
+        $gStitched.DrawString($TXT_HEADER_RIGHT, $font, $textBrush, ($bmpLeft.Width + 20), 10)
 
         $stitchedBmp.Save($stitchedPath, [System.Drawing.Imaging.ImageFormat]::Png)
 
@@ -171,7 +191,6 @@ function Capture-DualScreens() {
         $bmpRight.Dispose()
         $stitchedBmp.Dispose()
     } else {
-        # Single screen fallback
         $mon = $allScreens[0]
         Write-Host "[*] Phat hien 1 man hinh: $($mon.Bounds.Width)x$($mon.Bounds.Height)" -ForegroundColor Yellow
         $bmp = New-Object System.Drawing.Bitmap($mon.Bounds.Width, $mon.Bounds.Height)
@@ -191,7 +210,7 @@ function Cleanup-Captures() {
         [System.GC]::Collect()
         [System.GC]::WaitForPendingFinalizers()
         Get-ChildItem -Path $capturesDir -Include "*.png", "*.jpg", "*.jpeg" -File -Recurse | Remove-Item -Force -ErrorAction SilentlyContinue
-        Write-Host "[🧹] Da don dep sach se thu muc data/captures" -ForegroundColor Gray
+        Write-Host "[*] Da don dep sach se thu muc data/captures" -ForegroundColor Gray
     } catch {
         Write-Warning "Khong the xoa file anh tam: $_"
     }
@@ -202,67 +221,24 @@ $script:isAnalyzing = $false
 
 function Trigger-DailyPlanAnalysis() {
     if ($script:isAnalyzing) {
-        Send-TelegramText "⏳ Đang có một tiến trình phân tích đang chạy, vui lòng chờ trong giây lát..."
+        Send-TelegramText $TXT_BUSY
         return
     }
 
     $script:isAnalyzing = $true
     try {
         Write-Host "`n[>>>] KHOI TAO PHAN TICH THEO YEU CAU..." -ForegroundColor Yellow
-        Send-TelegramText "🔄 Bắt đầu chụp 2 màn hình (VP/Footprint và Bookmap) và phân tích kế hoạch..."
+        Send-TelegramText $TXT_START
 
         # Step 1: Capture dual screens
         $stitchedImage = Capture-DualScreens
         Write-Host "[+] Da chup va ghep anh: $stitchedImage" -ForegroundColor Green
 
         # Step 2: Prepare JSON schema & prompt for agy
-        $schemaJson = @'
-{
-  "type": "object",
-  "properties": {
-    "date": { "type": "string" },
-    "overview": { "type": "string" },
-    "plans": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "plan_number": { "type": "integer" },
-          "bias": { "type": "string" },
-          "wait_zone_low": { "type": "number" },
-          "wait_zone_high": { "type": "number" },
-          "entry_condition": { "type": "string" }
-        },
-        "required": ["plan_number", "bias", "wait_zone_low", "wait_zone_high", "entry_condition"]
-      }
-    }
-  },
-  "required": ["date", "overview", "plans"]
-}
-'@
+        $schemaJson = '{"type":"object","properties":{"date":{"type":"string"},"overview":{"type":"string"},"plans":{"type":"array","items":{"type":"object","properties":{"plan_number":{"type":"integer"},"bias":{"type":"string"},"wait_zone_low":{"type":"number"},"wait_zone_high":{"type":"number"},"entry_condition":{"type":"string"}},"required":["plan_number","bias","wait_zone_low","wait_zone_high","entry_condition"]}}},"required":["date","overview","plans"]}'
 
         $todayStr = (Get-Date).ToString("dd/MM/yyyy")
-        $prompt = @"
-Bạn là một chuyên gia giao dịch định lượng theo phương pháp Order Flow và Auction Market Theory phân tích vàng ($symbol).
-
-Quan sát kỹ hình ảnh biểu đồ 2 màn hình tại: $stitchedImage
-- MÀN HÌNH TRÁI: Cấu trúc Volume Profile (VAH, VAL, POC) và biểu đồ Footprint (Delta, cụm hấp thụ, mất cân bằng bid/ask).
-- MÀN HÌNH PHẢI: Bookmap (Bản đồ nhiệt tường thanh khoản resting limit orders, CVD, bong bóng khớp lệnh chủ động).
-
-NGUỒN DỮ LIỆU: Chỉ đọc và phân tích trực tiếp từ ảnh chụp 2 màn hình trên. Toàn bộ thang giá, cấu trúc Volume Profile và thanh khoản Bookmap đều quan sát trực tiếp từ biểu đồ (không dùng bất kỳ dữ liệu nào từ MT5).
-
-QUY TẮC BẮT BUỘC VỀ NGÔN NGỮ VÀ NỘI DUNG:
-1. TOÀN BỘ NỘI DUNG MÔ TẢ PHẢI ĐƯỢC VIẾT HOÀN TOÀN BẰNG TIẾNG VIỆT (STRICTLY VIETNAMESE).
-2. 'date': Định dạng ngày bắt buộc là dd/mm/yyyy (ví dụ: '$todayStr').
-3. 'overview': Tóm tắt bối cảnh thị trường trong ngày thật cô đọng, TỐI ĐA 100 KÝ TỰ bằng tiếng Việt.
-4. 'plans': Tạo từ 2 đến 3 kế hoạch giao dịch (#Plan 1, #Plan 2, #Plan 3), mỗi plan gồm:
-   - 'plan_number': 1, 2 hoặc 3
-   - 'bias': 'BUY' hoặc 'SELL'
-   - 'wait_zone_low': mức giá thấp của vùng chờ phản ứng
-   - 'wait_zone_high': mức giá cao của vùng chờ phản ứng
-   - 'entry_condition': điều kiện kích hoạt vào lệnh ngắn gọn súc tích theo Order Flow (Footprint, Bookmap) bằng tiếng Việt.
-5. Trả về đúng định dạng JSON theo schema đã cung cấp.
-"@
+        $prompt = [string]::Format($TXT_PROMPT_TPL, $symbol, $stitchedImage, $todayStr)
 
         Write-Host "[*] Dang goi agy ($modelName) phan tich..." -ForegroundColor Cyan
         $agyOutput = & agy -p $prompt --model $modelName --disable-slash-commands --output-format json --json-schema $schemaJson
@@ -281,8 +257,8 @@ QUY TẮC BẮT BUỘC VỀ NGÔN NGỮ VÀ NỘI DUNG:
         } elseif ($parsedOutput.response) {
             if ($parsedOutput.response -is [string]) {
                 $rawStr = $parsedOutput.response.Trim()
-                if ($rawStr.StartsWith('```')) {
-                    $rawStr = ($rawStr -replace '(?s)^```(?:json)?\s*', '') -replace '(?s)\s*```$', ''
+                if ($rawStr.StartsWith("```")) {
+                    $rawStr = ($rawStr -replace "(?s)^```(?:json)?\s*", "") -replace "(?s)\s*```$", ""
                 }
                 $planData = $rawStr | ConvertFrom-Json
             } else {
@@ -296,15 +272,15 @@ QUY TẮC BẮT BUỘC VỀ NGÔN NGỮ VÀ NỘI DUNG:
 
         # Format plan text according to content.md strictly
         $captionLines = @(
-            "📅 Kế hoạch ngày $($planData.date)",
-            "📝 $($planData.overview)",
+            ($TXT_DATE_LBL + $planData.date),
+            ($TXT_OVERVIEW_LBL + $planData.overview),
             ""
         )
 
         foreach ($p in $planData.plans) {
-            $captionLines += "#Plan $($p.plan_number): $($p.bias)"
-            $captionLines += "• Vùng chờ: $($p.wait_zone_low) - $($p.wait_zone_high)"
-            $captionLines += "• Điều kiện vào: $($p.entry_condition)"
+            $captionLines += ("#Plan " + $p.plan_number + ": " + $p.bias)
+            $captionLines += ($TXT_WAIT_LBL + $p.wait_zone_low + " - " + $p.wait_zone_high)
+            $captionLines += ($TXT_ENTRY_LBL + $p.entry_condition)
             $captionLines += ""
         }
 
@@ -312,15 +288,25 @@ QUY TẮC BẮT BUỘC VỀ NGÔN NGỮ VÀ NỘI DUNG:
         Write-Host "`n$finalCaption`n" -ForegroundColor Green
 
         # Inline button for next update
-        $planButtonMarkup = '{"inline_keyboard":[[{"text":"🔄 Cập nhật lại Plan","callback_data":"trigger_plan"}]]}'
+        $markupObj = @{
+            inline_keyboard = @(
+                @(
+                    @{
+                        text = $TXT_BTN_PLAN
+                        callback_data = "trigger_plan"
+                    }
+                )
+            )
+        }
+        $planButtonMarkup = ($markupObj | ConvertTo-Json -Compress)
 
         # Step 3: Send to Telegram
         Send-TelegramPhotoWithPlan -imagePath $stitchedImage -caption $finalCaption -replyMarkupJson $planButtonMarkup
-        Write-Host "[✓] Da gui ket qua thanh cong sang Telegram!" -ForegroundColor Green
+        Write-Host "[+] Da gui ket qua thanh cong sang Telegram!" -ForegroundColor Green
 
     } catch {
         Write-Host "[!] Loi trong qua trinh phan tich: $_" -ForegroundColor Red
-        Send-TelegramText "⚠️ Có lỗi xảy ra trong quá trình phân tích: $_"
+        Send-TelegramText ($TXT_ERR + $_)
     } finally {
         # Step 4: Always clean up captures immediately
         Cleanup-Captures
@@ -329,10 +315,21 @@ QUY TẮC BẮT BUỘC VỀ NGÔN NGỮ VÀ NỘI DUNG:
 }
 
 # 6. Startup Message & Telegram Event Listener Loop
-$initMarkup = '{"inline_keyboard":[[{"text":"🔄 Cập nhật lại Plan","callback_data":"trigger_plan"}]]}'
-Send-TelegramText "🚀 *Trading Signal Agent (Windows Native) đã khởi động và đang chạy thường trực.*`n`n📌 Bấm nút *[🔄 Cập nhật lại Plan]* bên dưới (hoặc gửi `/plan`) bất kỳ lúc nào để chụp 2 màn hình và phân tích kế hoạch." $initMarkup
+$initMarkupObj = @{
+    inline_keyboard = @(
+        @(
+            @{
+                text = $TXT_BTN_PLAN
+                callback_data = "trigger_plan"
+            }
+        )
+    )
+}
+$initMarkup = ($initMarkupObj | ConvertTo-Json -Compress)
 
-Write-Host "`n[✓] Server da san sang va dang lang nghe su kien tu Telegram..." -ForegroundColor Green
+Send-TelegramText $TXT_STARTUP $initMarkup
+
+Write-Host "`n[+] Server da san sang va dang lang nghe su kien tu Telegram..." -ForegroundColor Green
 Write-Host "    Nhan Ctrl+C de dung server.`n" -ForegroundColor Gray
 
 $lastUpdateId = 0
@@ -353,8 +350,8 @@ while ($true) {
                     $data = $cb.data
 
                     if ($data -eq "trigger_plan") {
-                        Write-Host "[Telegram] Nguoi dung bam nut: 🔄 Cap nhat lai Plan" -ForegroundColor Yellow
-                        Answer-CallbackQuery -callbackQueryId $cbId -toastText "Đang chụp 2 màn hình và phân tích..."
+                        Write-Host "[Telegram] Nguoi dung bam nut: Cap nhat lai Plan" -ForegroundColor Yellow
+                        Answer-CallbackQuery -callbackQueryId $cbId -toastText $TXT_TOAST
                         Trigger-DailyPlanAnalysis
                     }
                 }
@@ -364,7 +361,7 @@ while ($true) {
                     $msgText = $upd.message.text.Trim().ToLower()
 
                     if ($msgText -in @("/start", "/help")) {
-                        Send-TelegramText "👋 Xin chào! Hệ thống Bot phân tích Order Flow đang hoạt động trên Windows.`n`nBấm nút *[🔄 Cập nhật lại Plan]* bên dưới để kích hoạt phân tích." $initMarkup
+                        Send-TelegramText $TXT_WELCOME $initMarkup
                     } elseif ($msgText -eq "/plan") {
                         Write-Host "[Telegram] Nhan lenh: /plan" -ForegroundColor Yellow
                         Trigger-DailyPlanAnalysis
@@ -373,7 +370,6 @@ while ($true) {
             }
         }
     } catch {
-        # Network jitter / timeout retry
         Start-Sleep -Seconds 2
     }
 
