@@ -227,7 +227,8 @@ function Trigger-DailyPlanAnalysis() {
 
     $script:isAnalyzing = $true
     try {
-        Write-Host "`n[>>>] KHOI TAO PHAN TICH THEO YEU CAU..." -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "[>>>] KHOI TAO PHAN TICH THEO YEU CAU..." -ForegroundColor Yellow
         Send-TelegramText $TXT_START
 
         # Step 1: Capture dual screens
@@ -248,7 +249,7 @@ function Trigger-DailyPlanAnalysis() {
         }
 
         # Parse JSON output from agy (support array of lines from PowerShell 5.1 CLI output)
-        $rawJsonText = if ($agyOutput -is [array]) { $agyOutput -join "`n" } else { [string]$agyOutput }
+        $rawJsonText = if ($agyOutput -is [array]) { $agyOutput -join [System.Environment]::NewLine } else { [string]$agyOutput }
         $parsedOutput = $rawJsonText | ConvertFrom-Json
         $planData = $null
 
@@ -257,8 +258,10 @@ function Trigger-DailyPlanAnalysis() {
         } elseif ($parsedOutput.response) {
             if ($parsedOutput.response -is [string]) {
                 $rawStr = $parsedOutput.response.Trim()
-                if ($rawStr.StartsWith("```")) {
-                    $rawStr = ($rawStr -replace "(?s)^```(?:json)?\s*", "") -replace "(?s)\s*```$", ""
+                $startIdx = $rawStr.IndexOf("{")
+                $endIdx = $rawStr.LastIndexOf("}")
+                if ($startIdx -ge 0 -and $endIdx -gt $startIdx) {
+                    $rawStr = $rawStr.Substring($startIdx, $endIdx - $startIdx + 1)
                 }
                 $planData = $rawStr | ConvertFrom-Json
             } else {
@@ -284,8 +287,10 @@ function Trigger-DailyPlanAnalysis() {
             $captionLines += ""
         }
 
-        $finalCaption = ($captionLines -join "`n").Trim()
-        Write-Host "`n$finalCaption`n" -ForegroundColor Green
+        $finalCaption = ($captionLines -join [System.Environment]::NewLine).Trim()
+        Write-Host ""
+        Write-Host $finalCaption -ForegroundColor Green
+        Write-Host ""
 
         # Inline button for next update
         $markupObj = @{
@@ -329,8 +334,10 @@ $initMarkup = ($initMarkupObj | ConvertTo-Json -Compress)
 
 Send-TelegramText $TXT_STARTUP $initMarkup
 
-Write-Host "`n[+] Server da san sang va dang lang nghe su kien tu Telegram..." -ForegroundColor Green
-Write-Host "    Nhan Ctrl+C de dung server.`n" -ForegroundColor Gray
+Write-Host ""
+Write-Host "[+] Server da san sang va dang lang nghe su kien tu Telegram..." -ForegroundColor Green
+Write-Host "    Nhan Ctrl+C de dung server." -ForegroundColor Gray
+Write-Host ""
 
 $lastUpdateId = 0
 
