@@ -2,42 +2,36 @@ from src.analyzer.orderflow_models import (
     OrderFlowTriggerEvaluation,
     get_orderflow_trigger_json_schema,
 )
-from src.planner.models import DailyPlan, KeyZone, TradingScenario, get_daily_plan_json_schema
+from src.planner.models import DailyPlan, PlanItem, get_daily_plan_json_schema
 
 
 def test_daily_plan_schema():
     plan_data = {
-        "date": "2026-11-04",
+        "date": "06/11/2026",
         "symbol": "XAUUSD",
-        "market_context": "Balanced Auction inside Value Area",
-        "primary_bias": "BULLISH",
-        "key_zones": [
+        "overview": "Vàng giằng co quanh POC 2700, ưu tiên canh phản ứng tại biên Value Area.",
+        "plans": [
             {
-                "name": "VAL Support",
-                "price_low": 2695.0,
-                "price_high": 2697.0,
-                "zone_type": "SUPPORT",
-                "description": "Previous day Value Area Low + Bookmap Buy Wall",
-            }
-        ],
-        "scenarios": [
+                "plan_number": 1,
+                "bias": "BUY",
+                "wait_zone_low": 2695.0,
+                "wait_zone_high": 2697.0,
+                "entry_condition": "Quét thanh khoản VAL và tường mua Bookmap, Footprint có râu hấp thụ và delta dương",
+            },
             {
-                "scenario_id": "Scenario_A",
-                "name": "VAL Sweep & Footprint Absorption",
-                "bias": "BULLISH",
-                "entry_condition": "Sweep below 2695",
-                "trigger_signal": "Delta absorption wick + pop back into Value Area",
-                "target_zone": "POC at 2710",
-                "invalidation": "Acceptance below 2690 with aggressive selling",
-            }
+                "plan_number": 2,
+                "bias": "SELL",
+                "wait_zone_low": 2715.0,
+                "wait_zone_high": 2717.0,
+                "entry_condition": "Chạm VAH kháng cự, Bookmap cạn kiệt lực mua và Footprint xuất hiện mất cân bằng bán",
+            },
         ],
-        "summary": "Look for longs around 2695 if Bookmap wall holds and Footprint absorbs sellers.",
-        "generated_at": "2026-11-04T08:00:00",
+        "generated_at": "2026-11-06T08:00:00",
     }
     plan = DailyPlan.model_validate(plan_data)
-    assert plan.date == "2026-11-04"
-    assert len(plan.key_zones) == 1
-    assert len(plan.scenarios) == 1
+    assert plan.date == "06/11/2026"
+    assert len(plan.plans) == 2
+    assert plan.plans[0].bias == "BUY"
     assert get_daily_plan_json_schema() is not None
 
 

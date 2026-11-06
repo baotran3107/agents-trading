@@ -43,11 +43,13 @@ class RiskConfig(BaseModel):
 class ModelConfig(BaseModel):
     provider: str = "cli"  # "cli" or "gemini_api"
     cli_path: str = "agy"
-    model_name: str = "gemini-4-argon-medium"
+    model_name: str = Field(
+        default_factory=lambda: os.getenv("ARGON_MODEL", "gemini-3.8-flash-medium")
+    )
     api_key: Optional[str] = Field(
         default_factory=lambda: os.getenv("GEMINI_API_KEY")
     )
-    timeout_seconds: int = 35
+    timeout_seconds: int = 90
     retry_attempts: int = 1
 
 

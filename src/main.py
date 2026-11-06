@@ -65,7 +65,13 @@ def is_within_active_hours(config: AppConfig) -> bool:
     if not ah.enabled:
         return True
 
-    now = datetime.now(timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo(ah.timezone)
+        now = datetime.now(tz)
+    except Exception:
+        now = datetime.now()
+
     current_time_str = now.strftime("%H:%M")
     return ah.start <= current_time_str <= ah.end
 
@@ -103,7 +109,6 @@ class TradingSignalAgent:
             config=config,
             analyzer=self.analyzer,
             capture_service=self.capture_service,
-            mt5_client=self.mt5_client,
         )
         self.notifier.on_plan_requested = self.trigger_daily_plan
         self.last_plan_date: Optional[str] = (
@@ -177,22 +182,9 @@ class TradingSignalAgent:
             self.notifier.send_system_alert(f"Chart capture failed: {e}")
             return None
 
-        # ST-003: Raw Prices from MT5
-        try:
-            raw_prices = self.mt5_client.get_raw_prices(symbol)
-            logger.info(
-                f"MT5 Prices: {symbol} @ {raw_prices.current_price:.2f} "
-                f"(M15 Range: {raw_prices.m15_low:.2f} - {raw_prices.m15_high:.2f})"
-            )
-        except MT5ConnectionError as e:
-            logger.error(f"ST-003 AC-2: MT5 lost connection: {e}. Aborting cycle.")
-            self.notifier.send_system_alert(f"MT5 disconnected: {e}. Cycle aborted.")
-            return None
-
-        # Order Flow Analysis against Active Daily Plan (T-15s)
+        # Order Flow Analysis against Active Daily Plan (T-15s) solely from captured screens
         of_eval, meta = self.analyzer.analyze_orderflow_cycle(
             image_path=image_path,
-            raw_prices=raw_prices,
             daily_plan=self.daily_planner.current_plan,
         )
 
@@ -204,9 +196,12 @@ class TradingSignalAgent:
                 f"🚨 ORDER FLOW TRIGGER MET: {of_eval.direction} | "
                 f"Scenario: {of_eval.matched_scenario} | Zone: {of_eval.zone_description}"
             )
-            # Calculate Risk Parameters ($250 fixed risk)
-            trade_params = self.risk_calculator.calculate_trade_parameters(
-                direction=of_eval.direction, raw_prices=raw_prices
+            # Calculate Risk Parameters ($250 fixed risk) directly from Order Flow levels
+            trade_params = self.risk_calculator.calculate_orderflow_parameters(
+                direction=of_eval.direction,
+                entry=of_eval.suggested_entry,
+                sl=of_eval.suggested_sl,
+                tp=of_eval.suggested_tp,
             )
 
             # Send Proposal to Telegram

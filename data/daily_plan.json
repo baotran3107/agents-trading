@@ -1,0 +1,29 @@
+{
+  "date": "06/11/2026",
+  "symbol": "XAUUSD",
+  "overview": "Vàng tích lũy cân bằng quanh POC 2699.5, hấp thụ hai đầu 2697.1-2701.6 chờ bứt phá thanh khoản.",
+  "plans": [
+    {
+      "plan_number": 1,
+      "bias": "BUY",
+      "wait_zone_low": 2696.8,
+      "wait_zone_high": 2697.5,
+      "entry_condition": "Giá quét thanh khoản đáy M15 (2696.8-2697.5), xuất hiện hấp thụ bán (Seller Exhaustion) trên Footprint, Delta đảo chiều dương và tường Limit Buy dày đỡ giá trên Bookmap."
+    },
+    {
+      "plan_number": 2,
+      "bias": "SELL",
+      "wait_zone_low": 2701.2,
+      "wait_zone_high": 2702.0,
+      "entry_condition": "Giá kiểm định vùng đỉnh M15/VAH (2701.2-2702.0), xuất hiện cụm hấp thụ mua trên Footprint kèm tường Limit Sell chặn trên Bookmap và CVD suy yếu phân kỳ."
+    },
+    {
+      "plan_number": 3,
+      "bias": "BUY",
+      "wait_zone_low": 2701.0,
+      "wait_zone_high": 2701.6,
+      "entry_condition": "Phá vỡ xác nhận qua 2701.6 với Stacked Buy Imbalance trên Footprint và bong bóng khớp lệnh mua chủ động lớn nuốt trọn tường thanh khoản bán trên Bookmap, chờ nhịp retest 2701.0-2701.6."
+    }
+  ],
+  "generated_at": "2026-11-06T10:12:11+07:00"
+}

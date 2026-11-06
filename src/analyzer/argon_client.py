@@ -80,47 +80,45 @@ class ArgonClient:
     def analyze_orderflow_cycle(
         self,
         image_path: Path,
-        raw_prices: RawPrices,
         daily_plan: Optional[DailyPlan] = None,
     ) -> Tuple[Optional[OrderFlowTriggerEvaluation], Dict[str, Any]]:
         """
         Evaluates current 5-minute candle against active Daily Plan.
         Inspects composite dual monitor: Left (VP + Footprint), Right (Bookmap).
+        Directly reads prices and order flow from the captured screen only (no MT5 dependency).
         """
-        plan_context = "No active daily plan established. Analyze based on standard order flow reaction."
+        plan_context = "Chưa có Daily Plan cụ thể. Phân tích theo phản ứng Order Flow tổng quát."
         if daily_plan:
-            scenarios_desc = "\n".join(
-                [f"- {s.name} ({s.bias}): Condition='{s.entry_condition}', Trigger='{s.trigger_signal}'" for s in daily_plan.scenarios]
-            )
-            zones_desc = "\n".join(
-                [f"- {z.name} ({z.price_low:.1f}-{z.price_high:.1f}): {z.description}" for z in daily_plan.key_zones]
+            plans_desc = "\n".join(
+                [
+                    f"- #Plan {p.plan_number}: {p.bias} | Vùng chờ: {p.wait_zone_low:.2f} - {p.wait_zone_high:.2f} | Điều kiện vào: {p.entry_condition}"
+                    for p in daily_plan.plans
+                ]
             )
             plan_context = (
-                f"ACTIVE DAILY TRADING PLAN ({daily_plan.date}):\n"
-                f"Market Bias: {daily_plan.primary_bias}\n"
-                f"Key Zones:\n{zones_desc}\n"
-                f"Scenarios:\n{scenarios_desc}\n"
+                f"KẾ HOẠCH GIAO DỊCH TRONG NGÀY ({daily_plan.date}):\n"
+                f"Tổng quan: {daily_plan.overview}\n"
+                f"Các kịch bản theo dõi:\n{plans_desc}\n"
             )
 
-        prompt = f"""You are an elite Order Flow trader inspecting live gold (XAUUSD) markets 15 seconds before the 5-minute candle closes.
+        prompt = f"""Bạn là chuyên gia Order Flow và Auction Market Theory quan sát biểu đồ vàng (XAUUSD) tại thời điểm 15 giây trước khi nến 5 phút đóng.
 
-DUAL-MONITOR COMPOSITE SCREENSHOT: {image_path.resolve()}
-- LEFT MONITOR: Volume Profile (VAH, VAL, POC) and Footprint Chart (Delta imbalance, bid/ask cluster absorption).
-- RIGHT MONITOR: Bookmap (Resting liquidity heatmap, liquidity sweeps, CVD divergence).
+ẢNH TOÀN CẢNH 2 MÀN HÌNH: {image_path.resolve()}
+- MÀN HÌNH TRÁI: Volume Profile (VAH, VAL, POC) và Footprint Chart (Delta imbalance, hấp thụ nến, cụm bid/ask).
+- MÀN HÌNH PHẢI: Bookmap (Bản đồ nhiệt resting liquidity, quét thanh khoản, phân kỳ CVD).
 
-VERIFIED LIVE PRICES FROM MT5:
-- Current Price: {raw_prices.current_price:.2f} (Bid: {raw_prices.bid:.2f}, Ask: {raw_prices.ask:.2f})
-- 15M High: {raw_prices.m15_high:.2f} | 15M Low: {raw_prices.m15_low:.2f}
+NGUỒN DỮ LIỆU: Chỉ đọc và phân tích trực tiếp từ ảnh chụp 2 màn hình trên. Toàn bộ thang giá hiện tại, mức cản và khối lượng đều quan sát từ màn hình (không phụ thuộc bất kỳ dữ liệu ngoài nào từ MT5).
 
 {plan_context}
 
-EVALUATION CHECKLIST:
-1. Is current market structure moving in accordance with one of the planned scenarios? (plan_aligned)
-2. Is price inside or reacting to a planned key zone (VAH, VAL, POC, or Bookmap liquidity pool)? (in_key_zone)
-3. Is an order flow trigger clearly present? (e.g. Footprint absorption wick, delta exhaustion, or Bookmap liquidity sweep + bounce)? (trigger_detected)
-4. Set 'trade_ready' to true ONLY if all three conditions are satisfied.
-5. If trade_ready is true, specify direction (BUY or SELL), suggested_entry, suggested_sl, suggested_tp, and summary.
-6. Return strictly in JSON according to the schema.
+QUY TẮC BẮT BUỘC VỀ NGÔN NGỮ VÀ TIÊU CHÍ:
+1. TOÀN BỘ CÁC TRƯỜNG CHỮ ('zone_description', 'trigger_description', 'summary') PHẢI ĐƯỢC VIẾT HOÀN TOÀN BẰNG TIẾNG VIỆT (STRICTLY VIETNAMESE).
+2. Kiểm tra xem thị trường trên biểu đồ có đang phản ứng đúng một trong các #Plan trên không? (plan_aligned)
+3. Giá hiện tại quan sát trên màn hình có đang nằm trong hoặc vừa chạm 'Vùng chờ' của plan đó không? (in_key_zone)
+4. Đã xuất hiện tín hiệu kích hoạt (Trigger) Order Flow rõ ràng chưa? (trigger_detected: ví dụ râu nến Footprint hấp thụ lực bán, cạn kiệt delta, hoặc Bookmap quét thanh khoản rồi bật lại).
+5. Chỉ đặt 'trade_ready' = true khi CẢ 3 ĐIỀU KIỆN TRÊN ĐỀU THỎA MÃN.
+6. Nếu trade_ready = true, nêu rõ direction (BUY hoặc SELL), suggested_entry, suggested_sl, suggested_tp (đọc từ các mức cản/thanh khoản trên ảnh) và summary bằng tiếng Việt.
+7. Trả về đúng định dạng JSON theo schema đã cung cấp.
 """
         schema_str = json.dumps(get_orderflow_trigger_json_schema())
         cmd = [

@@ -18,7 +18,7 @@ class DailyPlanner:
         config: AppConfig,
         analyzer: ArgonClient,
         capture_service: ScreenCaptureService,
-        mt5_client: BaseMT5Client,
+        mt5_client: Optional[BaseMT5Client] = None,
     ):
         self.config = config
         self.analyzer = analyzer
@@ -41,49 +41,48 @@ class DailyPlanner:
             logger.error(f"Failed to load daily plan: {e}")
             return None
 
-    def generate_plan(self) -> Optional[DailyPlan]:
+    def generate_plan(self, image_path: Optional[Path] = None) -> Optional[DailyPlan]:
         """
-        Captures dual-monitor setup (Left: VP & Footprint, Right: Bookmap)
-        and calls Argon to synthesize the Daily Trading Plan.
+        Synthesizes the Daily Trading Plan via Argon.
+        If image_path is None, captures dual-monitor setup (Left: VP & Footprint, Right: Bookmap).
         """
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         logger.info(f"Generating Daily Plan for {self.config.trading.symbol}...")
 
-        # 1. Capture dual-screen
-        image_path = self.capture_service.capture(filename=f"daily_plan_{timestamp_str}.png")
+        # 1. Use provided image or capture dual-screen
+        if image_path is None or not image_path.exists():
+            image_path = self.capture_service.capture(filename=f"daily_plan_{timestamp_str}.png")
+        else:
+            logger.info(f"Using provided chart image for daily plan: {image_path}")
 
-        # 2. Fetch MT5 reference prices
-        try:
-            raw_prices = self.mt5_client.get_raw_prices(self.config.trading.symbol)
-            price_context = (
-                f"Current Price: {raw_prices.current_price:.2f}, "
-                f"M15 High: {raw_prices.m15_high:.2f}, M15 Low: {raw_prices.m15_low:.2f}"
-            )
-        except Exception as e:
-            price_context = "MT5 live price unavailable."
-
-        # 3. Prompt for Order Flow Daily Plan
+        # 2. Prompt for Order Flow Daily Plan
         schema_str = json.dumps(get_daily_plan_json_schema())
-        prompt = f"""You are an elite institutional Order Flow and Auction Market Theory trader analyzing gold ({self.config.trading.symbol}).
+        today_date_str = datetime.now().strftime("%d/%m/%Y")
+        prompt = f"""Bạn là một chuyên gia giao dịch định lượng theo phương pháp Order Flow và Auction Market Theory phân tích vàng ({self.config.trading.symbol}).
 
-Inspect the composite dual-monitor chart at: {image_path.resolve()}
-- LEFT MONITOR: Volume Profile (VP) structure (Value Area High/Low, Point of Control POC, Low Volume Nodes LVN) and Footprint chart (Delta, imbalances, absorptions).
-- RIGHT MONITOR: Bookmap (Resting limit order liquidity heatmap, CVD, aggressive market bubbles, liquidity walls).
-- REFERENCE PRICES: {price_context}
+Quan sát kỹ hình ảnh biểu đồ 2 màn hình tại: {image_path.resolve()}
+- MÀN HÌNH TRÁI: Cấu trúc Volume Profile (VAH, VAL, POC) và biểu đồ Footprint (Delta, cụm hấp thụ, mất cân bằng bid/ask).
+- MÀN HÌNH PHẢI: Bookmap (Bản đồ nhiệt tường thanh khoản resting limit orders, CVD, bong bóng khớp lệnh chủ động).
 
-YOUR TASK:
-Formulate today's trading plan adhering to the JSON schema:
-1. Identify the Market Context (e.g. Balanced rotation inside value area, Imbalanced trend extension, or Liquidity sweep mode).
-2. Mark Key Zones: VAH, VAL, POC, and major Bookmap resting liquidity clusters.
-3. Formulate 1 or 2 specific actionable Trading Scenarios (e.g. Scenario A: Buy on VAL sweep + Footprint absorption; Scenario B: Fade at resting liquidity ceiling).
-4. For each scenario, clearly specify what Footprint / Bookmap trigger confirms entry and what invalidates it.
-5. Return strictly in JSON according to the schema.
+NGUỒN DỮ LIỆU: Chỉ đọc và phân tích trực tiếp từ ảnh chụp 2 màn hình trên. Toàn bộ thang giá, cấu trúc Volume Profile và thanh khoản Bookmap đều quan sát trực tiếp từ biểu đồ (không dùng bất kỳ dữ liệu nào từ MT5).
+
+QUY TẮC BẮT BUỘC VỀ NGÔN NGỮ VÀ NỘI DUNG:
+1. TOÀN BỘ NỘI DUNG MÔ TẢ PHẢI ĐƯỢC VIẾT HOÀN TOÀN BẰNG TIẾNG VIỆT (STRICTLY VIETNAMESE).
+2. 'date': Định dạng ngày bắt buộc là dd/mm/yyyy (ví dụ: '{today_date_str}').
+3. 'overview': Tóm tắt bối cảnh thị trường trong ngày thật cô đọng, TỐI ĐA 100 KÝ TỰ bằng tiếng Việt.
+4. 'plans': Tạo từ 2 đến 3 kế hoạch giao dịch (#Plan 1, #Plan 2, #Plan 3), mỗi plan gồm:
+   - 'plan_number': 1, 2 hoặc 3
+   - 'bias': 'BUY' hoặc 'SELL'
+   - 'wait_zone_low': mức giá thấp của vùng chờ phản ứng
+   - 'wait_zone_high': mức giá cao của vùng chờ phản ứng
+   - 'entry_condition': điều kiện kích hoạt vào lệnh ngắn gọn súc tích theo Order Flow (Footprint, Bookmap) bằng tiếng Việt.
+5. Trả về đúng định dạng JSON theo schema đã cung cấp.
 """
 
         cmd = [
             self.config.model.cli_path,
             "-p", prompt,
-            "--model", self.config.model_name,
+            "--model", self.config.model.model_name,
             "--disable-slash-commands",
             "--output-format", "json",
             "--json-schema", schema_str,
@@ -91,7 +90,7 @@ Formulate today's trading plan adhering to the JSON schema:
 
         try:
             import subprocess
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=50)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             if proc.returncode != 0:
                 logger.error(f"Plan generation CLI error: {proc.stderr or proc.stdout}")
                 return None
@@ -117,41 +116,30 @@ Formulate today's trading plan adhering to the JSON schema:
             logger.error(f"Failed to generate daily plan: {e}", exc_info=True)
             return None
 
-    def format_plan_message(self, plan: DailyPlan) -> str:
-        """Formats the Daily Plan into clean Telegram Markdown."""
-        bias_emoji = {
-            "BULLISH": "🟢 BULLISH",
-            "BEARISH": "🔴 BEARISH",
-            "NEUTRAL_RANGE": "⚪ NEUTRAL / RANGE ROTATION",
-        }.get(plan.primary_bias, plan.primary_bias)
+    @staticmethod
+    def format_plan_message(plan: DailyPlan) -> str:
+        """
+        Formats the Daily Plan strictly according to content.md format:
+        📅 Kế hoạch ngày {dd/mm/yyyy}
+        📝 {Overview ≤100 ký tự}
 
+        #Plan 1: {BUY/SELL}
+        • Vùng chờ: {giá thấp} - {giá cao}
+        • Điều kiện vào: {điều kiện}
+        """
         lines = [
-            f"📋 **DAILY TRADING PLAN — {plan.symbol}**",
-            f"📅 Date: `{plan.date}` | Bias: **{bias_emoji}**",
-            f"🏛 *Auction Context:* {plan.market_context}",
+            f"📅 Kế hoạch ngày {plan.date}",
+            f"📝 {plan.overview}",
             "",
-            "🎯 **Key Order Flow Zones (VP & Bookmap):**",
         ]
 
-        for z in plan.key_zones:
-            lines.append(f"• **{z.name}** (`{z.price_low:.1f} - {z.price_high:.1f}`): {z.description}")
-
-        lines.append("\n⚡ **Planned Scenarios for Today:**")
-        for s in plan.scenarios:
-            dir_icon = "🟢" if s.bias == "BULLISH" else "🔴"
+        for p in plan.plans:
             lines.extend([
-                f"{dir_icon} **{s.name}** ({s.bias}):",
-                f"   • *Condition:* {s.entry_condition}",
-                f"   • *Trigger:* {s.trigger_signal}",
-                f"   • *Target:* {s.target_zone}",
-                f"   • *Invalidation:* {s.invalidation}",
+                f"#Plan {p.plan_number}: {p.bias}",
+                f"• Vùng chờ: {p.wait_zone_low:.2f} - {p.wait_zone_high:.2f}",
+                f"• Điều kiện vào: {p.entry_condition}",
+                "",
             ])
 
-        lines.extend([
-            "",
-            f"💡 *Summary:* {plan.summary}",
-            "\n_Bot will monitor 5M candles at T-15s against these exact scenarios._"
-        ])
-
-        return "\n".join(lines)
+        return "\n".join(lines).strip()
 

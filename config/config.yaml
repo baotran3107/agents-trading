@@ -1,5 +1,5 @@
 trading:
-  symbol: "XAUUSD"
+  symbol: "GCZ6"
   timeframe_minutes: 5
   t_minus_seconds: 15
   active_hours:
@@ -23,8 +23,8 @@ risk:
 
 model:
   cli_path: "agy"
-  model_name: "gemini-4-argon-low"
-  timeout_seconds: 25
+  model_name: "gemini-3.8-flash-medium"
+  timeout_seconds: 90
   retry_attempts: 1
 
 telegram:
