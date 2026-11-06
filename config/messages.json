@@ -1,0 +1,15 @@
+{
+  "header_left": "MÀN HÌNH TRÁI: VOLUME PROFILE & FOOTPRINT",
+  "header_right": "MÀN HÌNH PHẢI: BOOKMAP",
+  "startup": "🚀 *Trading Signal Agent (Windows Native) đã khởi động và đang chạy thường trực.*\n\n📌 Bấm nút *[🔄 Cập nhật lại Plan]* bên dưới (hoặc gửi `/plan`) bất kỳ lúc nào để chụp 2 màn hình và phân tích kế hoạch.",
+  "welcome": "👋 Xin chào! Hệ thống Bot phân tích Order Flow đang hoạt động trên Windows.\n\nBấm nút *[🔄 Cập nhật lại Plan]* bên dưới để kích hoạt phân tích.",
+  "busy": "⏳ Đang có một tiến trình phân tích đang chạy, vui lòng chờ trong giây lát...",
+  "start": "🔄 Bắt đầu chụp 2 màn hình (VP/Footprint và Bookmap) và phân tích kế hoạch...",
+  "toast": "Đang chụp 2 màn hình và phân tích...",
+  "err": "⚠️ Có lỗi xảy ra trong quá trình phân tích: ",
+  "btn_plan": "🔄 Cập nhật lại Plan",
+  "lbl_date": "📅 Kế hoạch ngày ",
+  "lbl_overview": "📝 ",
+  "lbl_wait": "• Vùng chờ: ",
+  "lbl_entry": "• Điều kiện vào: "
+}
