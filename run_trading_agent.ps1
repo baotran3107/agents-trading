@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Order Flow Trading Agent - Windows Native PowerShell Daemon
     Zero Python dependencies. Native Windows dual-screen capture, agy CLI & Telegram integration.
@@ -209,7 +209,7 @@ function Trigger-DailyPlanAnalysis() {
     $script:isAnalyzing = $true
     try {
         Write-Host "`n[>>>] KHOI TAO PHAN TICH THEO YEU CAU..." -ForegroundColor Yellow
-        Send-TelegramText "🔄 Bắt đầu chụp 2 màn hình (VP/Footprint & Bookmap) và phân tích kế hoạch..."
+        Send-TelegramText "🔄 Bắt đầu chụp 2 màn hình (VP/Footprint và Bookmap) và phân tích kế hoạch..."
 
         # Step 1: Capture dual screens
         $stitchedImage = Capture-DualScreens
@@ -271,17 +271,18 @@ QUY TẮC BẮT BUỘC VỀ NGÔN NGỮ VÀ NỘI DUNG:
             throw "CLI agy khong tra ve ket qua!"
         }
 
-        # Parse JSON output from agy
-        $parsedOutput = $agyOutput | ConvertFrom-Json
+        # Parse JSON output from agy (support array of lines from PowerShell 5.1 CLI output)
+        $rawJsonText = if ($agyOutput -is [array]) { $agyOutput -join "`n" } else { [string]$agyOutput }
+        $parsedOutput = $rawJsonText | ConvertFrom-Json
         $planData = $null
 
         if ($parsedOutput.structured_output) {
             $planData = $parsedOutput.structured_output
         } elseif ($parsedOutput.response) {
             if ($parsedOutput.response -is [string]) {
-                $rawStr = $parsedOutput.response
-                if ($rawStr -match "```(?:json)?\s*([\s\S]*?)\s*```") {
-                    $rawStr = $matches[1]
+                $rawStr = $parsedOutput.response.Trim()
+                if ($rawStr.StartsWith('```')) {
+                    $rawStr = ($rawStr -replace '(?s)^```(?:json)?\s*', '') -replace '(?s)\s*```$', ''
                 }
                 $planData = $rawStr | ConvertFrom-Json
             } else {
@@ -329,7 +330,7 @@ QUY TẮC BẮT BUỘC VỀ NGÔN NGỮ VÀ NỘI DUNG:
 
 # 6. Startup Message & Telegram Event Listener Loop
 $initMarkup = '{"inline_keyboard":[[{"text":"🔄 Cập nhật lại Plan","callback_data":"trigger_plan"}]]}'
-Send-TelegramText "🚀 *Trading Signal Agent (Windows Native) đã khởi động & đang chạy thường trực.*`n`n📌 Bấm nút *[🔄 Cập nhật lại Plan]* bên dưới (hoặc gửi `/plan`) bất kỳ lúc nào để chụp 2 màn hình và phân tích kế hoạch." $initMarkup
+Send-TelegramText "🚀 *Trading Signal Agent (Windows Native) đã khởi động và đang chạy thường trực.*`n`n📌 Bấm nút *[🔄 Cập nhật lại Plan]* bên dưới (hoặc gửi `/plan`) bất kỳ lúc nào để chụp 2 màn hình và phân tích kế hoạch." $initMarkup
 
 Write-Host "`n[✓] Server da san sang va dang lang nghe su kien tu Telegram..." -ForegroundColor Green
 Write-Host "    Nhan Ctrl+C de dung server.`n" -ForegroundColor Gray
